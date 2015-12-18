@@ -23,11 +23,14 @@ def get_config():
     elif config["dataset"] == "svhn":
         config["num_input"] = 3072
         config["image_shape"] = (32,32,3)
+        config["num_output"] = 10
 
     config["mnist_file"] = "/data/lisatmp4/lambalex/mnist/mnist.pkl.gz"
     config["svhn_file_train"] = "/data/lisatmp4/lambalex/svhn/train_32x32.mat"
     config["svhn_file_extra"] = "/data/lisatmp4/lambalex/svhn/extra_32x32.mat"
     config["svhn_file_test"] = "/data/lisatmp4/lambalex/svhn/test_32x32.mat"
+
+    config["use_convolutional_classifier"] = False
 
     config["save_model_file_name"] = 'model_file'
 

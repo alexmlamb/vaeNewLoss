@@ -54,7 +54,11 @@ class Updates:
 
             mom = 0.9
 
-            learning_rate_use = learning_rate
+            if param.name[0] == 'c':
+                print "using smaller learning rate for", param.name
+                learning_rate_use = 0.05 * learning_rate
+            else:
+                learning_rate_use = learning_rate
 
             updates[gparam] = T.cast(mom * gparam - (1.0 - mom) * learning_rate_use * new_gradient, theano.config.floatX)
 

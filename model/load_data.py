@@ -163,10 +163,17 @@ def load_data_mnist(config):
     return rval
 
 def normalizeMatrix(X, mean, std):
-    new_X = (X - mean) / std
-    new_X = np.reshape(new_X, (new_X.shape[0], -1)).astype('float32')
+    print "x shape", X.shape
+    print "mean shape", mean.shape
+    print "std shape", std.shape
 
-    return new_X
+    mean = np.swapaxes(mean, 1,2)
+    std = np.swapaxes(std, 1,2)
+
+    new_X = (X - mean) / std
+    #new_X = np.reshape(new_X, (new_X.shape[0], -1)).astype('float32')
+
+    return new_X.astype('float32')
 
 def load_data(config):
     if config["dataset"] == "svhn":
