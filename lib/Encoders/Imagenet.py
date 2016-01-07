@@ -1,5 +1,5 @@
-from ConvolutionalLayer import ConvPoolLayer
-from HiddenLayer import HiddenLayer
+from Layers.ConvolutionalLayer import ConvPoolLayer
+from Layers.HiddenLayer import HiddenLayer
 
 def imagenet_encoder(x,numHidden):
     c1 = ConvPoolLayer(input=x.dimshuffle(0, 3, 1, 2), in_channels = 3, out_channels = 128, kernel_len = 5, in_rows = 32, in_columns = 32, batch_size = 100,
