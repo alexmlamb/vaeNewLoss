@@ -16,11 +16,14 @@ rng = np.random.RandomState(23455)
 
 class Weight(object):
 
-    def __init__(self, w_shape, mean=0, std=1.0, name = ""):
+    def __init__(self, w_shape, mean=0, std=1.0, name = "", mode = ""):
         super(Weight, self).__init__()
         if std != 0:
+
+            print "conv layer with name", name, "using std of", std
             self.np_values = np.asarray(
-                rng.normal(mean, std, w_shape) * 0.01, dtype=theano.config.floatX)
+               1.0 * rng.normal(mean, std, w_shape), dtype=theano.config.floatX)
+
         else:
             self.np_values = np.cast[theano.config.floatX](
                 mean * np.ones(w_shape, dtype=theano.config.floatX))
@@ -40,13 +43,18 @@ class Weight(object):
 
 class ConvPoolLayer(object):
 
-    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, convstride, padsize, poolsize, poolstride, bias_init, name, paramMap):
+    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, convstride, padsize, poolsize, poolstride, bias_init, name, paramMap, activation = "relu", batch_norm = True):
 
+        std = 0.02
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
         self.image_shape = np.asarray((in_channels, in_rows, in_columns, batch_size))
 
-        self.W = Weight(self.filter_shape, name = name + "_W")
-        self.b = Weight(self.filter_shape[3], bias_init, std=0, name = name + "_b")
+        self.W = Weight(self.filter_shape, name = name + "_W", std = std, mode = 'conv')
+        self.b = Weight(self.filter_shape[3], bias_init, std=0, name = name + "_b", mode = 'conv')
+
+        if batch_norm:
+            self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))
+            self.bn_std = theano.shared(np.random.normal(1.0, 0.001, size = (1,out_channels,1,1)).astype('float32'))
 
         if paramMap != None:
             print "shapes"
@@ -57,8 +65,9 @@ class ConvPoolLayer(object):
 
         #Input: Batch, rows, columns, channels
         #Output: Batch, channels, rows, columns
-        input_shuffled = input.dimshuffle(0, 3, 1, 2)  # c01b to bc01
+        #input_shuffled = input.dimshuffle(0, 3, 1, 2)  # c01b to bc01
 
+        input_shuffled = input
 
             # in01out to outin01
             # print image_shape_shuffled
@@ -71,23 +80,33 @@ class ConvPoolLayer(object):
                                         border_mode=padsize,
                                         )
 
+        if not batch_norm:
+            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
+        else:
+            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x') * 0.0
 
-
-        conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
+        if batch_norm:
+            conv_out = (conv_out - T.mean(conv_out, axis = (0,2,3), keepdims = True)) / (1.0 + T.std(conv_out, axis=(0,2,3), keepdims = True))
+            conv_out = conv_out * T.addbroadcast(self.bn_std,0,2,3) + T.addbroadcast(self.bn_mean, 0,2,3)
 
         self.out_store = conv_out
 
-        self.output = T.maximum(0.0, conv_out)
-
+        if activation == "relu":
+            self.output = T.maximum(0.0, conv_out)
+        elif activation == "tanh":
+            self.output = T.tanh(conv_out)
+        elif activation == None:
+            self.output = conv_out
 
         if poolsize != 1:
             self.output = dnn.dnn_pool(self.output,ws=(poolsize, poolsize),stride=(poolstride, poolstride))
 
 
-        self.output = self.output.dimshuffle(0, 2, 3, 1)
-
-
         self.params = {name + '_W' : self.W.val, name + '_b' : self.b.val}
+        
+        if batch_norm:
+            self.params[name + "_mu"] = self.bn_mean
+            self.params[name + "_sigma"] = self.bn_std
 
     def getParams(self):
         return self.params
@@ -97,35 +116,55 @@ if __name__ == "__main__":
 
     x = T.tensor4()
 
-    randData = np.random.uniform(size = (100,32,32,3)).astype('float32')
+    randData = np.random.normal(size = (1,256,256,3)).astype('float32')
+
+    c1 = ConvPoolLayer(input=x.dimshuffle(0,3,1,2), in_channels = 3, out_channels = 96, kernel_len = 5, in_rows = 256, in_columns = 256, batch_size = 100,
+                                        convstride=2, padsize=2, 
+                                        poolsize=1, poolstride=0,
+                                        bias_init=0.1, name = "h2", paramMap = None
+                                        )
+
+    c2 = ConvPoolLayer(input=c1.output, in_channels = 96, out_channels = 256, kernel_len = 5, in_rows = 17, in_columns = 17, batch_size = 100,
+                                        convstride=2, padsize=2,
+                                        poolsize=1, poolstride=0,
+                                        bias_init=0.0, name = "c2", paramMap = None
+                                        )
 
 
+    c3 = ConvPoolLayer(input=c2.output, in_channels = 256, out_channels = 384, kernel_len = 5, in_rows = 33, in_columns = 33, batch_size = 100,
+                                        convstride=2, padsize=2,
+                                        poolsize=1, poolstride=0,
+                                        bias_init=0.0, name = "h3", paramMap = None
+                                        )
 
-    c1 = ConvPoolLayer(input=x, in_channels = 3, out_channels = 96, kernel_len = 5, in_rows = 32, in_columns = 32, batch_size = 100,
-                                        convstride=1, padsize=4, 
-                                        poolsize=3, poolstride=2, 
-                                        bias_init=0.0, name = "c1", paramMap = None)
+    c4 = ConvPoolLayer(input=c3.output, in_channels = 384, out_channels = 384, kernel_len = 5, in_rows = 15, in_columns = 15, batch_size = 100,
+                                        convstride=2, padsize=2,
+                                        poolsize=1, poolstride=0,
+                                        bias_init=0.1, name = "h3", paramMap = None
+                                        )
 
-    #c2 = ConvPoolLayer(input=c1.output, in_channels = 96, out_channels = 128, kernel_len = 3, in_rows = 17, in_columns = 17, batch_size = 100,
-    #                                    convstride=1, padsize=3,
-    #                                    poolsize=3, poolstride=2,
-    #                                    bias_init=0.0, name = "h2"
-    #                                    )
+    c5 = ConvPoolLayer(input=c4.output, in_channels = 384, out_channels = 256, kernel_len = 5, in_rows = 6, in_columns = 6, batch_size = 100,
+                                        convstride=2, padsize=2,
+                                        poolsize=1, poolstride=0,
+                                        bias_init=0.0, name = "h3", paramMap = None
+                                        )
 
-    #c3 = ConvPoolLayer(input=c2.output, in_channels = 128, out_channels = 128, kernel_len = 3, in_rows = 10, in_columns = 10, batch_size = 100,
-    #                                    convstride=1, padsize=0,
-    #                                    poolsize=3, poolstride=2,
-    #                                    bias_init=0.0, name = "h3"
-    #                                    )
+    y = c5.output
 
 
-    y = c1.output
-
-    g = T.sum(T.grad(T.sum(y), c1.getParams()["c1_W"]))
-
-    f = theano.function(inputs = [x], outputs = {'y' : y, 'g' : g})
+    f = theano.function(inputs = [x], outputs = {'y' : y, 'c1' : c1.output.transpose(0,2,3,1), 'c2' : c2.output.transpose(0,2,3,1), 'c3' : c3.output.transpose(0,2,3,1), 'c4' : c4.output.transpose(0,2,3,1), 'c5' : c5.output.transpose(0,2,3,1)})
 
     #print f(randData)['g']
-    print f(randData)['y'].shape
+    out = f(randData)
 
+
+    print (randData**2).sum()
+    print (out['c1']**2).sum()
+    print (out['c2']**2).sum()
+    print (out['c3']**2).sum()
+    print (out['c4']**2).sum()
+    print (out['c5']**2).sum()
+
+    for element in sorted(out.keys()):
+        print element, out[element].shape
 

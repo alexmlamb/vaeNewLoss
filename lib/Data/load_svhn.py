@@ -3,6 +3,21 @@ import gzip
 import cPickle
 
 
+class SvhnData:
+
+    def __init__(self):
+        pass
+
+    def normalize(self, x):
+        pass
+
+    def denormalize(self, x):
+        pass
+
+
+    def getBatch(self):
+        pass
+
 #Returns list of tuples containing training, validation, and test instances.
 def load_data_svhn(config):
 
@@ -111,79 +126,7 @@ def load_data_svhn(config):
 
     return {"train": (train_X, train_Y.flatten()), "valid" : (valid_X, valid_Y.flatten()), "test" : (test_X, test_Y.flatten()), "mean" : x_mean, "std" : x_std}
 
-def load_data_kaldi_i84(config):
 
-    fileTrain = gzip.open(config["kaldi-i84_file_train"], "r")
-    fileValid = gzip.open(config["kaldi-i84_file_valid"], "r")
-    fileTest = gzip.open(config["kaldi-i84_file_test"], "r")
-
-    def read_kaldi_file(fh):
-
-        featureLst = []
-        labelLst = []
-
-
-        for line in fh:
-            obj = cPickle.loads(line.replace("newline_rep","\n"))
-            features = obj[0]
-            label = obj[1]
-
-            featureLst += [features]
-            labelLst += [label]
-
-        featureMatrix = np.vstack(featureLst)
-        labelMatrix = np.vstack(labelLst)
-
-        return featureMatrix, labelMatrix.flatten()
-
-    return {"train" : read_kaldi_file(fileTrain), "valid": read_kaldi_file(fileValid), "test" : read_kaldi_file(fileTest)}
-
-def load_data_mnist(config):
-    dataset = config["mnist_file"]
-
-    f = gzip.open(dataset, 'rb')
-    train_set, valid_set, test_set = cPickle.load(f)
-    f.close()
-
-    test_set_x, test_set_y = test_set
-    valid_set_x, valid_set_y = valid_set
-    train_set_x, train_set_y = train_set
-
-    train_shuffled_indices = np.random.choice(train_set_x.shape[0], train_set_x.shape[0], replace = False)
-
-    train_set_x = train_set_x[train_shuffled_indices]
-    train_set_y = train_set_y[train_shuffled_indices]
-
-
-    rval = {"train" : (train_set_x, train_set_y), "valid" : (valid_set_x, valid_set_y), "test" : (test_set_x, test_set_y)}
-
-    #[(train_set_x, train_set_y), (valid_set_x, valid_set_y),
-           # (test_set_x, test_set_y)]
-
-    return rval
-
-def normalizeMatrix(X, mean, std):
-    print "x shape", X.shape
-    print "mean shape", mean.shape
-    print "std shape", std.shape
-
-    mean = np.swapaxes(mean, 1,2)
-    std = np.swapaxes(std, 1,2)
-
-    new_X = (X - mean) / std
-    #new_X = np.reshape(new_X, (new_X.shape[0], -1)).astype('float32')
-
-    return new_X.astype('float32')
-
-def load_data(config):
-    if config["dataset"] == "svhn":
-        return load_data_svhn(config)
-    elif config["dataset"] == "mnist":
-        return load_data_mnist(config)
-    elif config["dataset"] == "kaldi-i84":
-        return load_data_kaldi_i84(config)
-    else:
-        raise Exception("Dataset must be either svhn or mnist")
 
 
 

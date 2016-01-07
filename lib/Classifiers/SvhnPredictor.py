@@ -1,10 +1,10 @@
 from config import get_config
-import load_data
 import theano
 import theano.tensor as T
 import numpy as np
 import cPickle
 from Classifier import Classifier
+import load_data
 
 config = get_config()
 
