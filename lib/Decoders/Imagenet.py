@@ -1,13 +1,27 @@
 from Layers.HiddenLayer import HiddenLayer
 from Layers.DeConvLayer import DeConvLayer
 
+import theano.tensor as T
 
 def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size):
+
+
+    h3 = HiddenLayer(z, num_in = numLatent, num_out = numHidden, initialization = 'xavier', name = "h3", activation = 'relu', batch_norm = False)
+
+    h4 = HiddenLayer(h3.output, num_in = numHidden, num_out = 128 * 128 * 3, initialization = 'xavier', name = "h4", activation = None, batch_norm = False)
+
+    h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = numHidden, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = 'relu', batch_norm = False)
+
+    h4_generated = HiddenLayer(h3_generated.output, num_in = numHidden, num_out = 128 * 128 * 3, initialization = 'xavier', paramMap = h4.getParams(), name = "h4", activation = None, batch_norm = False)
+
+    return {'layers' : {'h3' : h3, 'h4' : h4}, 'output' : h4.output.reshape((mb_size,128,128,3)), 'output_generated' : h4_generated.output.reshape((mb_size,128,128,3))}
+
+def imagenet_decoder_1(z, z_sampled, numLatent, numHidden, mb_size):
 
     h3 = HiddenLayer(z, num_in = numLatent, num_out = numHidden, initialization = 'xavier', name = "h3", activation = "relu")
     h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = numHidden, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = "relu")
 
-    deconv_shapes = [512,512,512,256,256,128,3]
+    deconv_shapes = [512,256,128,64,32,16,3]
 
     h4 = HiddenLayer(h3.output, num_in = numHidden, num_out = 4 * 4 * deconv_shapes[0], initialization = 'xavier', name = "h4", activation = "relu")
     h4_generated = HiddenLayer(h3_generated.output, num_in = numHidden, num_out = 4 * 4 * deconv_shapes[0], initialization = 'xavier', paramMap = h4.getParams(), name = "h4", activation = "relu")
@@ -25,7 +39,7 @@ def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size):
 
     o5 = DeConvLayer(o4.output, in_channels = deconv_shapes[4], out_channels = deconv_shapes[5], kernel_len = 5, in_rows = 64, in_columns = 64, batch_size = 100, bias_init = 0.0, name = 'o5', paramMap = None, upsample_rate = 2, activation = 'relu')
 
-    y = DeConvLayer(o5.output, in_channels = deconv_shapes[5], out_channels = deconv_shapes[6], kernel_len = 5, in_rows = 128, in_columns = 128, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = None, upsample_rate = 2, activation = None)
+    y = DeConvLayer(o5.output, in_channels = deconv_shapes[5], out_channels = deconv_shapes[6], kernel_len = 5, in_rows = 128, in_columns = 128, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = None, upsample_rate = 2, activation = None, batch_norm = False)
 
     o1_generated = DeConvLayer(h4_generated_reshaped, in_channels = deconv_shapes[0], out_channels = deconv_shapes[1], kernel_len = 5, in_rows = 4, in_columns = 4, batch_size = 100, bias_init = 0.0, name = 'o1', paramMap = o1.getParams(), upsample_rate = 2, activation = 'relu')
 
@@ -37,8 +51,7 @@ def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size):
 
     o5_generated = DeConvLayer(o4_generated.output, in_channels = deconv_shapes[4], out_channels = deconv_shapes[5], kernel_len = 5, in_rows = 64, in_columns = 64, batch_size = 100, bias_init = 0.0, name = 'o5', paramMap = o5.getParams(), upsample_rate = 2, activation = 'relu')
 
-    y_generated = DeConvLayer(o5_generated.output, in_channels = deconv_shapes[5], out_channels = deconv_shapes[6], kernel_len = 5, in_rows = 128, in_columns = 128, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = y.getParams(), upsample_rate = 2, activation = None)
-
+    y_generated = DeConvLayer(o5_generated.output, in_channels = deconv_shapes[5], out_channels = deconv_shapes[6], kernel_len = 5, in_rows = 128, in_columns = 128, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = y.getParams(), upsample_rate = 2, activation = None, batch_norm = False)
 
     output = y.output.dimshuffle(0, 2, 3, 1)
     sample_output = y_generated.output.dimshuffle(0, 2, 3, 1)

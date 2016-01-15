@@ -5,7 +5,7 @@ import numpy.random as rng
 
 class HiddenLayer: 
 
-    def __init__(self, input, num_in, num_out, initialization, name, activation = None, paramMap = None, batch_norm = True): 
+    def __init__(self, input, num_in, num_out, initialization, name, activation = None, paramMap = None, batch_norm = False): 
 
         if paramMap == None: 
 

@@ -71,11 +71,11 @@ class SvhnData:
 
     def getBatch(self):
 
-        if self.index + 101 >= self.numExamples:
+        if self.index + self.mb_size + 10 >= self.numExamples:
             self.index = 0
 
         mb = self.train_X[self.index : self.index + self.mb_size]
 
-        self.index += 100
+        self.index += self.mb_size
 
         return {'x' : mb}

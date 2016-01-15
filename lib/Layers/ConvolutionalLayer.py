@@ -43,7 +43,7 @@ class Weight(object):
 
 class ConvPoolLayer(object):
 
-    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, convstride, padsize, poolsize, poolstride, bias_init, name, paramMap, activation = "relu", batch_norm = True):
+    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, convstride, padsize, poolsize, poolstride, bias_init, name, paramMap, activation = "relu", batch_norm = False):
 
         std = 0.02
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
@@ -51,6 +51,7 @@ class ConvPoolLayer(object):
 
         self.W = Weight(self.filter_shape, name = name + "_W", std = std, mode = 'conv')
         self.b = Weight(self.filter_shape[3], bias_init, std=0, name = name + "_b", mode = 'conv')
+        self.R = Weight((in_channels,1,1,out_channels), name = name + "_R", mean = 0.01, std = std, mode = 'conv')
 
         if batch_norm:
             self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))
@@ -73,6 +74,7 @@ class ConvPoolLayer(object):
             # print image_shape_shuffled
             # print filter_shape_shuffled
         W_shuffled = self.W.val.dimshuffle(3, 0, 1, 2)  # c01b to bc01
+        R_shuffled = self.R.val.dimshuffle(3,0,1,2)
 
         conv_out = dnn.dnn_conv(img=input_shuffled,
                                         kerns=W_shuffled,
@@ -80,10 +82,12 @@ class ConvPoolLayer(object):
                                         border_mode=padsize,
                                         )
 
+        conv_out_residual = dnn.dnn_conv(img=input_shuffled,kerns=R_shuffled,subsample=(convstride,convstride),border_mode=0)
+
         if not batch_norm:
             conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
         else:
-            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x') * 0.0
+            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
 
         if batch_norm:
             conv_out = (conv_out - T.mean(conv_out, axis = (0,2,3), keepdims = True)) / (1.0 + T.std(conv_out, axis=(0,2,3), keepdims = True))
@@ -92,7 +96,7 @@ class ConvPoolLayer(object):
         self.out_store = conv_out
 
         if activation == "relu":
-            self.output = T.maximum(0.0, conv_out)
+            self.output = T.maximum(0.0, conv_out) + conv_out_residual
         elif activation == "tanh":
             self.output = T.tanh(conv_out)
         elif activation == None:
@@ -102,8 +106,8 @@ class ConvPoolLayer(object):
             self.output = dnn.dnn_pool(self.output,ws=(poolsize, poolsize),stride=(poolstride, poolstride))
 
 
-        self.params = {name + '_W' : self.W.val, name + '_b' : self.b.val}
-        
+        self.params = {name + '_W' : self.W.val, name + '_b' : self.b.val, name + "_R" : self.R.val}
+
         if batch_norm:
             self.params[name + "_mu"] = self.bn_mean
             self.params[name + "_sigma"] = self.bn_std

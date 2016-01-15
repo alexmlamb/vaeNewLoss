@@ -20,6 +20,7 @@ class ImageNetData:
         self.images = images
 
         self.mb_size = config['mb_size']
+        self.image_width = config['image_width']
 
     def normalize(self, x):
         return (x / 127.5) - 1.0
@@ -40,11 +41,11 @@ class ImageNetData:
 
         while len(imageLst) < self.mb_size:
             image = self.images[index]
-            imgObj = Image.open(image)
+            imgObj = Image.open(image).convert('RGB')
 
-            imgObj = imgObj.resize((256,256))
+            imgObj = imgObj.resize((self.image_width,self.image_width))
             img = np.asarray(imgObj)
-            if img.shape == (256,256,3):
+            if img.shape == (self.image_width,self.image_width,3):
                 imageLst.append([img])
 
 
@@ -71,7 +72,7 @@ class ImageNetData:
                 imageLst_32.append([img])
 
 
-            index += 1
+            #index += 1
             if index >= self.numExamples:
                 index = 0
 
@@ -84,7 +85,7 @@ class ImageNetData:
         x_16 = np.vstack(imageLst_16).astype('float32')
         x_32 = np.vstack(imageLst_32).astype('float32')
 
-        self.lastIndex = index + 1
+        self.lastIndex = index#index + 1
 
         return {'x' : x, 'x_4' : x_4, 'x_8' : x_8, 'x_16' : x_16, 'x_32' : x_32}
 

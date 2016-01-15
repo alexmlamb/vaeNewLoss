@@ -28,7 +28,7 @@ def deconv(X, w, subsample=(1, 1), border_mode=(0, 0), conv_mode='conv'):
 
 class DeConvLayer(object):
 
-    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, bias_init, name, paramMap, activation, upsample_rate, batch_norm = True):
+    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, bias_init, name, paramMap, activation, upsample_rate, batch_norm = False):
 
         '''
 
@@ -54,13 +54,17 @@ class DeConvLayer(object):
             std = 0.02
             self.W = Weight(self.filter_shape, name = name + "_W", mode = 'deconv', std = std).val
             self.b = Weight(self.filter_shape[1], bias_init, std=0, name = name + "_b", mode = 'deconv').val
-            self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_mean")
-            self.bn_std = theano.shared(np.random.normal(1.0, 0.000001, size = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_std")
+            #self.R = Weight(self.filter_shape, name = name + "_R", mode = 'deconv', mean = 0.01, std = std).val
+            if batch_norm:
+                self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_mean")
+                self.bn_std = theano.shared(np.random.normal(1.0, 0.000001, size = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_std")
         else:
             self.W = paramMap[name + "_W"]
             self.b = paramMap[name + "_b"]
-            self.bn_mean = paramMap[name + "_mu"]
-            self.bn_std = paramMap[name + "_sigma"]
+            #self.R = paramMap[name + "_R"]
+            if batch_norm:
+                self.bn_mean = paramMap[name + "_mu"]
+                self.bn_std = paramMap[name + "_sigma"]
 
         #Input: Batch, rows, columns, channels
         #Output: Batch, channels, rows, columns
@@ -69,6 +73,7 @@ class DeConvLayer(object):
         border_mode = (2,2)
 
         conv_out = deconv(input_shuffled, self.W, subsample=(upsample_rate, upsample_rate), border_mode=border_mode)
+        #residual_out = deconv(input_shuffled, self.R, subsample=(upsample_rate, upsample_rate), border_mode=border_mode)
 
         conv_out = conv_out + self.b.dimshuffle('x', 0, 'x', 'x')
 
@@ -89,7 +94,10 @@ class DeConvLayer(object):
             raise Exception()
 
 
-        self.params = {name + '_W' : self.W, name + '_b' : self.b, name + "_mu" : self.bn_mean, name + "_sigma" : self.bn_std}
+        self.params = {name + '_W' : self.W, name + '_b' : self.b}#, name + "_R" : self.R}
+        if batch_norm:
+            self.params[name + "_mu"] = self.bn_mean
+            self.params[name + "_sigma"] = self.bn_std
 
     def getParams(self):
         return self.params
@@ -134,8 +142,6 @@ if __name__ == "__main__":
     layers += [dc6]
 
     import config
-    import load_imagenet
-    id = load_imagenet.ImageNetData(config.get_config())
 
     loss = T.mean(T.sqr(layers[-1].output.transpose(0,2,3,1) - x))
 
@@ -143,9 +149,7 @@ if __name__ == "__main__":
 
     #loss = T.mean(-1.0 * (sig(x)) * T.log(0.1 + sig(layers[-1].output.transpose(0,2,3,1))) - 1.0 * (1.0 - sig(x)) * T.log(0.1 + 1.0 - sig(layers[-1].output.transpose(0,2,3,1))))
 
-    ofl = 0.0 * get_overfeat_diff(id.denormalize(layers[-1].output.transpose(0,2,3,1)), id.denormalize(x))
 
-    loss += ofl
 
     updates = {}
 
@@ -165,7 +169,7 @@ if __name__ == "__main__":
 
     updates = updateObj.getUpdates()
 
-    f = theano.function(inputs = [x], outputs = {'o1' : layers[0].output.transpose(0,2,3,1), 'o2' : layers[1].output.transpose(0,2,3,1), 'o3' : layers[2].output.transpose(0,2,3,1), 'o4' : layers[3].output.transpose(0,2,3,1), 'o5' : layers[4].output.transpose(0,2,3,1), 'o6' : layers[5].output.transpose(0,2,3,1), 'l' : loss, 'ofl' : ofl, 'y' : layers[-1].output.transpose(0,2,3,1)}, updates = updates)
+    f = theano.function(inputs = [x], outputs = {'o1' : layers[0].output.transpose(0,2,3,1), 'o2' : layers[1].output.transpose(0,2,3,1), 'o3' : layers[2].output.transpose(0,2,3,1), 'o4' : layers[3].output.transpose(0,2,3,1), 'o5' : layers[4].output.transpose(0,2,3,1), 'o6' : layers[5].output.transpose(0,2,3,1), 'l' : loss, 'y' : layers[-1].output.transpose(0,2,3,1)}, updates = updates)
 
     x = id.normalize(id.getBatch())
 

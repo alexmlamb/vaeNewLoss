@@ -24,6 +24,7 @@ class Updates:
         obj2Grad = {}
 
         l2_loss = 0.0
+        norm = 0.0
 
         for param in paramObjLst:
             gparam_mom = theano.shared(np.zeros(param.get_value(borrow=True).shape,dtype=theano.config.floatX))
@@ -39,6 +40,9 @@ class Updates:
 
         for i in range(0, len(paramObjLst)): 
             obj2Grad[paramObjLst[i]] = gradLst[i]
+            norm += T.sum(T.sqr(gradLst[i]))
+
+        norm = T.sqrt(norm)
 
         for param in paramObjLst:
             gparam = g_mom[param]
@@ -48,25 +52,23 @@ class Updates:
             new_gradient = obj2Grad[param]
 
             #Divide by the norm of the gradient if it is greater than one
-            new_gradient = new_gradient
+            clip = 500.0
+            new_gradient = T.switch(norm > clip, clip*new_gradient/norm, new_gradient)
 
             new_gradient = T.switch(T.isnan(new_gradient), 0.0, new_gradient)
 
-            mom = 0.9
-
-            #if param.name[0] == 'c':
-            #    print "using smaller learning rate for", param.name
-            #    learning_rate_use = 0.05 * learning_rate
-            #else:
-            #    learning_rate_use = learning_rate
+            mom = 0.0
 
             learning_rate_use = learning_rate
 
-            updates[gparam] = T.cast(mom * gparam - (1.0 - mom) * learning_rate_use * new_gradient, theano.config.floatX)
+            updates[gparam] = T.cast(mom * gparam - learning_rate_use * new_gradient, theano.config.floatX)
 
         for param in paramObjLst:
-            updated_value = param + updates[g_mom[param]]
 
+            gparam_new = updates[g_mom[param]]
+            gparam_old = g_mom[param]
+
+            updated_value = param - mom * gparam_old + (1 + mom) * gparam_new
 
             if param.ndim == 2:
                 updated_value = normalize(updated_value)
@@ -78,9 +80,5 @@ class Updates:
     def getUpdates(self): 
 
         return self.updates
-
-
-
-
 
 
