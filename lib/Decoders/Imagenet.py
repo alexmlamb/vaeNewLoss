@@ -3,18 +3,27 @@ from Layers.DeConvLayer import DeConvLayer
 
 import theano.tensor as T
 
-def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size):
 
 
-    h3 = HiddenLayer(z, num_in = numLatent, num_out = numHidden, initialization = 'xavier', name = "h3", activation = 'relu', batch_norm = False)
+def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
 
-    h4 = HiddenLayer(h3.output, num_in = numHidden, num_out = 128 * 128 * 3, initialization = 'xavier', name = "h4", activation = None, batch_norm = False)
+    layers = []
 
-    h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = numHidden, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = 'relu', batch_norm = False)
+    layers += [HiddenLayer(num_in = numLatent, num_out = numHidden, initialization = 'xavier', activation = 'relu')]
 
-    h4_generated = HiddenLayer(h3_generated.output, num_in = numHidden, num_out = 128 * 128 * 3, initialization = 'xavier', paramMap = h4.getParams(), name = "h4", activation = None, batch_norm = False)
+    layers += [HiddenLayer(num_in = numHidden, num_out = image_width * image_width * 3, initialization = 'xavier', activation = None)]
 
-    return {'layers' : {'h3' : h3, 'h4' : h4}, 'output' : h4.output.reshape((mb_size,128,128,3)), 'output_generated' : h4_generated.output.reshape((mb_size,128,128,3))}
+    generated_outputs = [z_sampled]
+    reconstruction_outputs = [z]
+
+    for i in range(0, len(layers)):
+        generated_outputs += [layers[i].output(generated_outputs[-1])]
+        reconstruction_outputs += [layers[i].output(reconstruction_outputs[-1])]
+
+    return {'layers' : {'h3' : h3, 'h4' : h4}, 'output' : reconstruction_outputs[-1].reshape((mb_size,image_width,image_width,3)), 'output_generated' : generated_outputs[-1].reshape((mb_size,image_width,image_width,3))}
+
+
+
 
 def imagenet_decoder_1(z, z_sampled, numLatent, numHidden, mb_size):
 

@@ -47,7 +47,6 @@ class ConvPoolLayer(object):
 
         std = 0.02
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
-        self.image_shape = np.asarray((in_channels, in_rows, in_columns, batch_size))
 
         self.W = Weight(self.filter_shape, name = name + "_W", std = std, mode = 'conv')
         self.b = Weight(self.filter_shape[3], bias_init, std=0, name = name + "_b", mode = 'conv')

@@ -52,12 +52,12 @@ class Updates:
             new_gradient = obj2Grad[param]
 
             #Divide by the norm of the gradient if it is greater than one
-            clip = 500.0
+            clip = 5.0
             new_gradient = T.switch(norm > clip, clip*new_gradient/norm, new_gradient)
 
             new_gradient = T.switch(T.isnan(new_gradient), 0.0, new_gradient)
 
-            mom = 0.0
+            mom = 0.9
 
             learning_rate_use = learning_rate
 

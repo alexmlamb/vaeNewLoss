@@ -4,26 +4,33 @@ def get_config():
 
     config = {}
 
-    #Importance sampling or vanilla sgd.  
-    config["importance_algorithm"] = "isgd"
-    #config["importance_algorithm"] = "sgd"
-
     #Momentum rate, where 0.0 corresponds to not using momentum
     config["momentum_rate"] = 0.9
 
     #The learning rate to use on the gradient averaged over a minibatch
     config["learning_rate"] = 0.01
 
-    #config["dataset"] = "mnist"
-    config["dataset"] = "svhn"
+    config["mb_size"] = 1
+
+    #config["dataset"] = "svhn"
+    config['dataset'] = 'imagenet'
 
     if config["dataset"] == "mnist":
         config["num_input"] = 784
         config["image_shape"] = (28,28,1)
     elif config["dataset"] == "svhn":
         config["num_input"] = 3072
+        config["image_width"] = 32
         config["image_shape"] = (32,32,3)
         config["num_output"] = 10
+    elif config['dataset'] == 'imagenet':
+        config["image_shape"] = (256,256,3)
+        config["num_input"] = 196608
+        config["image_width"] = 256
+        config["num_output"] = 1000
+
+    config["imagenet_location"] = "/u/lambalex/data/imagenet/"
+
 
     config["mnist_file"] = "/data/lisatmp4/lambalex/mnist/mnist.pkl.gz"
     config["svhn_file_train"] = "/data/lisatmp4/lambalex/svhn/train_32x32.mat"

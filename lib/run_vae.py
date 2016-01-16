@@ -2,18 +2,24 @@ import theano
 import theano.tensor as T
 import numpy as np
 import numpy.random as rng
-from HiddenLayer import HiddenLayer
+from Layers.HiddenLayer import HiddenLayer
 from Updates import Updates
 import math
 import time
 
-from ConvolutionalLayer import ConvPoolLayer
+#from Classifiers.imagenet_classifier import get_overfeat_diff
+
 
 import cPickle
 
 from config import get_config
 
-from load_data import load_data_mnist, load_data_svhn
+#from load_data import load_data_mnist, load_data_svhn
+
+from model_files.load_vgg import get_dist
+
+from Data.load_imagenet import ImageNetData
+from Data.load_svhn import SvhnData
 
 from PIL import Image
 
@@ -21,11 +27,9 @@ import os
 
 import pprint
 
-from Classifier import Classifier
+#from Classifiers.SvhnPredictor import c1_diff
+#from Predictor import c1_diff
 
-from Predictor import classify_image, c1_diff
-
-from DeConvLayer import DeConvLayer
 
 theano.config.flaotX = 'float32'
 
@@ -36,31 +40,20 @@ if __name__ == "__main__":
 
     config["layer_weighting"] = {'y' : 1.0}
 
-    if config["dataset"] == "mnist":
-        xData = load_data_mnist(config)
-    elif config["dataset"] == "svhn":
-        xData = load_data_svhn(config)
+
+    if config['dataset'] == "imagenet":
+        data = ImageNetData(config)
+    elif config['dataset'] == "svhn":
+        data = SvhnData(config)
     else:
-        raise Exception("dataset not found")
-
-    config["classifier_load"] = "model_files/get_hidden_svhn_1450486080.pkl"
-
-    if config["classifier_load"] != None:
-        classifier_loaded = cPickle.load(open(config["classifier_load"], "r"))
-        use_cl = True
-    else:
-        use_cl = False
-
-    print "loaded classifiers"
-
-
-    #raise Exception('done')
+        raise Exception()
 
     print "compiled hidden grabber"
 
-    config["learning_rate"] = 0.00001
-    config["number_epochs"] = 200000000
-    config["report_epoch_ratio"] = 500
+    #0.001 works
+    config["learning_rate"] = 100.0
+    config["number_epochs"] = 20000000
+    config["report_epoch_ratio"] = 20
     config["popups"] = True
 
     experimentDir = "plots/exp_" + str(int(time.time()))
@@ -68,7 +61,7 @@ if __name__ == "__main__":
 
     config["experiment_type"] = "original_layer"
 
-    numHidden = 1000
+    numHidden = 200
     #was 50
     numLatent = 50
     numInput = config['num_input']
@@ -76,8 +69,6 @@ if __name__ == "__main__":
 
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
 
-    svhn_mean = 50.0
-    svhn_std = 200.0
 
     s = pprint.pformat(config)
     configLogFile = open(experimentDir + "/log.txt", "w")
@@ -86,85 +77,41 @@ if __name__ == "__main__":
 
     #N x 1
     x = T.tensor4()
-    observed_y = T.matrix()
 
-    if config['dataset'] == 'svhn':
-        x_normed = (x - svhn_mean) / svhn_std
-        observed_y_normed = (observed_y - svhn_mean) / svhn_std
+    if config['dataset'] == 'imagenet':
+        from Encoders.Imagenet import imagenet_encoder as encoder_class
+    elif config['dataset'] == 'svhn':
+        from Encoders.Svhn import svhn_encoder as encoder_class
+    else:
+        raise Exception()
 
+    encoder = encoder_class(data.normalize(x), numHidden, config['image_width'])
 
-    c1 = ConvPoolLayer(input=x_normed, in_channels = 3, out_channels = 96, kernel_len = 5, in_rows = 32, in_columns = 32, batch_size = 100,
-                                        convstride=1, padsize=4,
-                                        poolsize=3, poolstride=2,
-                                        bias_init=0.0, name = "c1", paramMap = None)
+    encoder_layers = encoder['layers'].values()
+    encoder_output = encoder['output']
 
-    c2 = ConvPoolLayer(input=c1.output, in_channels = 96, out_channels = 128, kernel_len = 3, in_rows = 17, in_columns = 17, batch_size = 100,
-                                        convstride=1, padsize=3,
-                                        poolsize=3, poolstride=2,
-                                        bias_init=0.0, name = "c2", paramMap = None
-                                        )
+    z_mean = HiddenLayer(encoder_output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_mean', activation = None)
 
-    c3 = ConvPoolLayer(input=c2.output, in_channels = 128, out_channels = 256, kernel_len = 3, in_rows = 10, in_columns = 10, batch_size = 100,
-                                        convstride=1, padsize=0,
-                                        poolsize=3, poolstride=2,
-                                        bias_init=0.0, name = "c3", paramMap = None)
+    z_var = HiddenLayer(encoder_output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_var', activation = 'exp')
 
-    h1 = HiddenLayer(c3.output.flatten(2), num_in = 2304, num_out = numHidden, initialization = 'xavier', name = "h1", activation = "relu")
-
-    h2 = HiddenLayer(h1.output, num_in = numHidden, num_out = numHidden, initialization = 'xavier', name = "h2", activation = "relu")
-
-    z_mean = HiddenLayer(h2.output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_mean', activation = None)
-
-    z_var = HiddenLayer(h2.output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_var', activation = 'exp')
-
-    z_sampled = srng.normal(size = (100, numLatent))
+    z_sampled = srng.normal(size = (config['mb_size'], numLatent))
 
     z = z_sampled * z_var.output + z_mean.output
 
-    #h3 = HiddenLayer(z, num_in = numLatent, num_out = numHidden, initialization = 'xavier', name = "h3", activation = "relu")
+    if config["dataset"] == "imagenet":
+        from Decoders.Imagenet import imagenet_decoder
+        decoder = imagenet_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+    elif config["dataset"] == "svhn":
+        from Decoders.Svhn import svhn_decoder
+        decoder = svhn_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+    else:
+        raise Exception()
 
-    #h4 = HiddenLayer(h3.output, num_in = numHidden, num_out = numHidden, initialization = 'xavier', name = "h4", activation = "relu")
+    decoder_layers = decoder['layers'].values()
+    x_reconstructed = decoder['output']
+    x_sampled = decoder['output_generated']
 
-    #y = HiddenLayer(h4.output, num_in = numHidden, num_out = numOutput, initialization = 'xavier', name = "output", activation = None)
-
-    #h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = numHidden, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = "relu")
-
-    #h4_generated = HiddenLayer(h3_generated.output, num_in = numHidden, num_out = numHidden, initialization = 'xavier', paramMap = h4.getParams(), name = "h4", activation = "relu")
-
-    #y_generated = HiddenLayer(h4_generated.output, num_in = numHidden, num_out = numOutput, initialization = 'xavier', paramMap = y.getParams(), name = "output", activation = 'tanh')
-
-    #Make y and y_generated from z.  
-
-    #DECODER
-
-    h3 = HiddenLayer(z, num_in = numLatent, num_out = 2048, initialization = 'xavier', name = "h3", activation = "relu")
-    h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = 2048, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = "relu")
-
-    h3_reshaped = h3.output.reshape((100, 4,4,128))
-    h3_generated_reshaped = h3_generated.output.reshape((100,4,4,128))
-
-    o1 = DeConvLayer(h3_reshaped, in_channels = 128, out_channels = 128, kernel_len = 5, in_rows = 4, in_columns = 4, batch_size = 100, bias_init = 0.0, name = 'o1', paramMap = None, upsample_rate = 2, activation = 'relu')
-
-    o2 = DeConvLayer(o1.output, in_channels = 128, out_channels = 64, kernel_len = 5, in_rows = 8, in_columns = 8, batch_size = 100, bias_init = 0.0, name = 'o2', paramMap = None, upsample_rate = 2, activation = 'relu')
-
-    y = DeConvLayer(o2.output, in_channels = 64, out_channels = 3, kernel_len = 5, in_rows = 16, in_columns = 16, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = None, activation = 'tanh', upsample_rate = 2)
-
-    o1_generated = DeConvLayer(h3_generated_reshaped, in_channels = 128, out_channels = 256, kernel_len = 5, in_rows = 4, in_columns = 4, batch_size = 100, bias_init = 0.0, name = 'o1', paramMap = o1.getParams(), upsample_rate = 2, activation = 'relu')
-
-    o2_generated = DeConvLayer(o1_generated.output, in_channels = 256, out_channels = 128, kernel_len = 5, in_rows = 8, in_columns = 8, batch_size = 100, bias_init = 0.0, name = 'o2', paramMap = o2.getParams(), upsample_rate = 2, activation = 'relu')
-
-    y_generated = DeConvLayer(o2_generated.output, in_channels = 128, out_channels = 3, kernel_len = 5, in_rows = 16, in_columns = 16, batch_size = 100, bias_init = 0.0, name = 'y', paramMap = y.getParams(), activation = 'tanh', upsample_rate = 2)
-
-    y.output = y.output.reshape((100, 3072))
-    y_generated.output = y_generated.output.reshape((100, 3072))
-
-    #DECODER DONE
-
-    if config['dataset'] == 'svhn':
-        y_generated.output = (y_generated.output * svhn_std) + svhn_mean
-
-    #layers = [h1,z_mean,z_var,h2,h3,y,h4,c1,c2,c3]
-    layers = [h1,z_mean,z_var,h2,c1,c2,c3,y, o1, o2, h3]
+    layers = [z_mean,z_var] + encoder_layers + decoder_layers
 
     params = {}
 
@@ -172,23 +119,28 @@ if __name__ == "__main__":
         layerParams = layer.getParams()
         for paramKey in layerParams: 
             params[paramKey] = layerParams[paramKey]
+            print "param shape", layerParams[paramKey].get_value().shape
 
     print "params", params
 
-
     variational_loss = 0.5 * T.sum(z_mean.output**2 + z_var.output - T.log(z_var.output) - 1.0)
 
-    loss = T.sum(T.sqr(y.output - observed_y_normed))
 
-    #loss = 0.0
 
-    y_output_shaped = T.reshape(y.output, (100,32,32,3)) * svhn_std + svhn_mean
-    observed_y_shaped = T.reshape(observed_y_normed, (100,32,32,3)) * svhn_std + svhn_mean
+    #y_out_sig = T.nnet.sigmoid(x_reconstructed)
+    #y_obs_sig = (observed_y + 1.0) / 2
 
-    loss += c1_diff(y_output_shaped, observed_y_shaped)
+    #square_loss = T.sum(-1.0 * (y_obs_sig) * T.log(y_out_sig) - 1.0 * (1.0 - y_obs_sig) * T.log(1.0 - y_out_sig))
 
-    #loss = T.sum(T.sqr(y_output_shaped - observed_y_shaped))
+    square_loss = 0.0 * T.sum(T.sqr(x - x_reconstructed))
 
+    loss = 0.0
+
+    loss += square_loss
+
+    dist_style, dist_content = get_dist(x_reconstructed, x, config)
+
+    loss += sum(dist_style.values()) + sum(dist_content.values())
 
     loss += variational_loss
 
@@ -196,73 +148,88 @@ if __name__ == "__main__":
 
     updates = updateObj.getUpdates()
 
-    shaped_x = T.tensor4()
+    print "starting compilation"
+    t0 = time.time()
 
-    #classify = theano.function(inputs = [shaped_x], outputs = {'o' : get_hidden_diff(shaped_x, shaped_x, {})})
+    train = theano.function(inputs = [x], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'overfeat_loss' : sum(dist_style.values()) + sum(dist_content.values()), 'variational_loss' : variational_loss, 'samples' : x_reconstructed, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean.output, 'z_var' : z_var.output, 'loss_style' : sum(dist_style.values()), 'loss_content' : sum(dist_content.values())}, updates = updates)
 
-    train = theano.function(inputs = [x, observed_y], outputs = {'loss' : loss, 'variational_loss' : variational_loss, 'samples' : y_generated.output, 'reconstruction' : y_output_shaped, 'obs' : observed_y_shaped}, updates = updates)
+    #dist_content.update(dist_style)
+    #get_losses = theano.function(inputs = [x], outputs = dist_content)
 
-    print "Finished compiling training function"
+    print "Finished compiling training function in", time.time() - t0
 
-    sample = theano.function(inputs = [], outputs = [y_generated.output])
+    sample = theano.function(inputs = [], outputs = [x_sampled])
 
-    lossLst = []
-
+    total_loss_lst = []
+    square_loss_lst = []
+    overfeat_loss_lst = []
 
     #compute_hidden_diff = theano.function(inputs = [xA, xB], outputs = {'hd' : get_hidden_diff(xA, xB, config['layer_weighting'])})
 
-    for iteration in range(0, config["number_epochs"]): 
+    print "running on data"
 
-        index = (iteration * 100) % xData["train"][0].shape[0]
+    iteration = -1
 
-        x = xData["train"][0][index : index + 100]
-        y_true = xData['train'][1][index : index + 100]
+    while True: 
 
-        if x.shape[0] != 100:
-            continue
+        iteration += 1
 
-        x = np.swapaxes(x, 2, 3).swapaxes(1,2)
+        index = (iteration * config['mb_size']) % data.numExamples
 
-        x_notflat = x
-        x = x.reshape(100, config['num_input'])
+        x_batch = data.getBatch()
+
+        x = x_batch['x']
+
+        if x.shape[0] != config['mb_size']:
+            x_batch = data.getBatch()
+            x = x_batch['x']
+
+        results = train(x)
 
 
-        results = train(x_notflat,x)
+        total_loss_lst.append(results['total_loss'])
+        square_loss_lst.append(results['square_loss'])
+        overfeat_loss_lst.append(results['overfeat_loss'])
 
-        loss = results['loss']
         variational_loss = results['variational_loss']
         y = results['samples']
 
-        lossLst += [math.log(loss)]
-
         if iteration % config["report_epoch_ratio"] == 0: 
 
-            if config['dataset'] == 'mnist':
-                ys = y[0].reshape(28, 28) * 255.0
-                im = Image.fromarray(ys)
-            elif config['dataset'] == 'svhn':
-                ys = y[0].reshape(32, 32, 3)
-                ys_rec = results['reconstruction'][0]
-                im = Image.fromarray(ys.astype('uint8'), "RGB")
-                im2 = Image.fromarray(ys_rec.astype('uint8'), "RGB")
-                im3 = Image.fromarray(results['obs'][0].astype('uint8'), "RGB")
-            else:
-                raise Exception("")
+            print 'style loss', results['loss_style']
+            print 'content loss', results['loss_content']
+
+            #il = get_losses(x)
+            #for key in sorted(il.keys()):
+            #    print key, il[key]
+
+            print "z mean", results["z_mean"].min(), results['z_mean'].max()
+            print "z var", results['z_var'].min(), results["z_var"].max()
+
+            ys = y[0]
+            ys_rec = np.clip(results['reconstruction'][0], 0.0, 255.0)
+            print "ys rec max", results['reconstruction'].max()
+            print "ys rec min", results['reconstruction'].min()
+            im = Image.fromarray(ys.astype('uint8'), "RGB")
+            im2 = Image.fromarray(ys_rec.astype('uint8'), "RGB")
+            im3 = Image.fromarray(x[0].astype('uint8'), "RGB")
 
             print "=============================================="
 
             print "iteration", str(iteration / config["report_epoch_ratio"])
 
+            print "dy/dx", results['g']
+
             im.convert('RGB').save(experimentDir + "/iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
             im2.convert('RGB').save(experimentDir + "/reconstruction_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
             im3.convert('RGB').save(experimentDir + "/observed_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
 
-            print "True Label", y_true[0]
-            #print "Classify out", classify(x_notflat)['o'][0]
+            print "Total Loss", sum(total_loss_lst) * 1.0 / len(total_loss_lst)
+            print "Square Loss", sum(square_loss_lst) * 1.0 / len(square_loss_lst)
+            print "Overf Loss", sum(overfeat_loss_lst) * 1.0 / len(overfeat_loss_lst)
+            print "Var Loss", variational_loss
 
-            print "loss", loss
-            print "vloss", variational_loss
-
-
-
+            total_loss_lst = []
+            square_loss_lst = []
+            overfeat_loss_lst = []
 
