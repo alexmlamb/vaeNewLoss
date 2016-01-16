@@ -5,11 +5,9 @@ import numpy.random as rng
 
 class HiddenLayer: 
 
-    def __init__(self, input, num_in, num_out, initialization, name, activation = None, params = None): 
+    def __init__(self, input, num_in, num_out, initialization, name, activation = None, paramMap = None): 
 
-        self.params = params
-
-        if params == None: 
+        if paramMap == None: 
 
             self.params = {}
 
@@ -23,10 +21,13 @@ class HiddenLayer:
             self.params[name + "_b"] = b
 
         else: 
-            W = params[name + "_W"]
-            b = params[name + "_b"]
+            W = paramMap[name + "_W"]
+            b = paramMap[name + "_b"]
 
         lin_output = T.dot(input, W) + b
+
+
+        self.out_store = lin_output
 
         if activation == None: 
             activation = lambda x: x
@@ -34,12 +35,13 @@ class HiddenLayer:
             activation = lambda x: T.maximum(0.0, x)
         elif activation == "exp": 
             activation = lambda x: T.exp(x)
+        elif activation == "tanh":
+            activation = lambda x: T.tanh(x)
         else: 
             raise Exception("Activation not found")
 
         self.output = activation(lin_output)
 
-        
 
 
     def getParams(self): 

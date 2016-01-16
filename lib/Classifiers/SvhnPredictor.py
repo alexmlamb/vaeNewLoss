@@ -3,8 +3,8 @@ import theano
 import theano.tensor as T
 import numpy as np
 import cPickle
-from Classifier import Classifier
-import load_data
+from SvhnClassifier import Classifier
+import Data.load_svhn as load_data
 
 config = get_config()
 

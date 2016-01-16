@@ -1,6 +1,6 @@
 from config import get_config
-import load_data
-from HiddenLayer import HiddenLayer
+import Data.load_svhn
+from Layers.HiddenLayer import HiddenLayer
 import Updates
 import theano
 import theano.tensor as T
@@ -9,7 +9,7 @@ import cPickle
 
 import time
 
-from ConvolutionalLayer import ConvPoolLayer
+from Layers.ConvolutionalLayer import ConvPoolLayer
 
 import sys
 
@@ -39,7 +39,7 @@ class Classifier:
         self.x = x
         self.y = y
 
-        x_normed = load_data.normalizeMatrix(self.x, mean, std)
+        x_normed = load_svhn.normalizeMatrix(self.x, mean, std)
 
         self.x_normed = x_normed
 

@@ -72,7 +72,7 @@ class ImageNetData:
                 imageLst_32.append([img])
 
 
-            #index += 1
+            index += 1
             if index >= self.numExamples:
                 index = 0
 
@@ -85,7 +85,7 @@ class ImageNetData:
         x_16 = np.vstack(imageLst_16).astype('float32')
         x_32 = np.vstack(imageLst_32).astype('float32')
 
-        self.lastIndex = index#index + 1
+        self.lastIndex = index + 1
 
         return {'x' : x, 'x_4' : x_4, 'x_8' : x_8, 'x_16' : x_16, 'x_32' : x_32}
 
