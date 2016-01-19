@@ -65,7 +65,7 @@ if __name__ == "__main__":
     config["report_epoch_ratio"] = 5
     config["popups"] = True
 
-    experimentDir = "plots/exp_" + str(int(time.time()))
+    experimentDir = config['plot_output_directory'] + "exp_" + str(int(time.time()))
     os.mkdir(experimentDir)
 
     config["experiment_type"] = "original_layer"

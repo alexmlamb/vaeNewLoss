@@ -20,6 +20,8 @@ def get_config():
     config["imagenet_location"] = "/u/lambalex/data/imagenet/"
     config["cifar_location"] = "/u/lambalex/data/cifar/cifar-10-batches-py/"
 
+    config["plot_output_directory"] = "/u/lambalex/plots/"
+
     config["mnist_file"] = "/data/lisatmp4/lambalex/mnist/mnist.pkl.gz"
     config["svhn_file_train"] = "/data/lisatmp4/lambalex/svhn/train_32x32.mat"
     config["svhn_file_extra"] = "/data/lisatmp4/lambalex/svhn/extra_32x32.mat"

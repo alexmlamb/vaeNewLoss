@@ -154,7 +154,7 @@ def gram_matrix(x, mb_size):
     return (x.dimshuffle(0, 'x', 1, 2, 3) * x.dimshuffle(0, 1, 'x', 2, 3)).sum(axis=[3, 4]).flatten(ndim=2)
 
 def get_dist(x1, x2, config):
-    obj = pickle.load(open('model_files/vgg19_normalized.pkl'))
+    obj = pickle.load(open(config['vgg19_file']))
 
     params = obj['param values']
 
