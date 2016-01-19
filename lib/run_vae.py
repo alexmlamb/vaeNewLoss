@@ -3,7 +3,10 @@ import theano.tensor as T
 import numpy as np
 import numpy.random as rng
 from Layers.HiddenLayer import HiddenLayer
-from Updates import Updates
+#from Updates import Updates
+
+import lasagne
+
 import math
 import time
 
@@ -20,12 +23,16 @@ from model_files.load_vgg import get_dist
 
 from Data.load_imagenet import ImageNetData
 from Data.load_svhn import SvhnData
+from Data.load_cifar import CifarData
 
 from PIL import Image
 
 import os
 
 import pprint
+
+import sys
+sys.setrecursionlimit(990000)
 
 #from Classifiers.SvhnPredictor import c1_diff
 #from Predictor import c1_diff
@@ -45,15 +52,17 @@ if __name__ == "__main__":
         data = ImageNetData(config)
     elif config['dataset'] == "svhn":
         data = SvhnData(config)
+    elif config['dataset'] == 'cifar':
+        data = CifarData(config, "train")
     else:
         raise Exception()
 
     print "compiled hidden grabber"
 
     #0.001 works
-    config["learning_rate"] = 100.0
+    config["learning_rate"] = 0.0001
     config["number_epochs"] = 20000000
-    config["report_epoch_ratio"] = 20
+    config["report_epoch_ratio"] = 5
     config["popups"] = True
 
     experimentDir = "plots/exp_" + str(int(time.time()))
@@ -61,14 +70,10 @@ if __name__ == "__main__":
 
     config["experiment_type"] = "original_layer"
 
-    numHidden = 200
-    #was 50
+    numHidden = 2048
     numLatent = 50
-    numInput = config['num_input']
-    numOutput = config['num_input']
 
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
-
 
     s = pprint.pformat(config)
     configLogFile = open(experimentDir + "/log.txt", "w")
@@ -80,51 +85,59 @@ if __name__ == "__main__":
 
     if config['dataset'] == 'imagenet':
         from Encoders.Imagenet import imagenet_encoder as encoder_class
-    elif config['dataset'] == 'svhn':
+    elif config['dataset'] == 'svhn' or config['dataset'] == 'cifar':
         from Encoders.Svhn import svhn_encoder as encoder_class
     else:
         raise Exception()
 
-    encoder = encoder_class(data.normalize(x), numHidden, config['image_width'])
+    encoder = encoder_class(x, numHidden, mb_size = config['mb_size'], image_width = config['image_width'])
 
-    encoder_layers = encoder['layers'].values()
+    encoder_layers = encoder['layers']
     encoder_output = encoder['output']
+    encoder_extra_params = encoder['extra_params']
 
-    z_mean = HiddenLayer(encoder_output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_mean', activation = None)
+    z_mean_layer = HiddenLayer(num_in = numHidden, num_out = numLatent, activation = None)
 
-    z_var = HiddenLayer(encoder_output, num_in = numHidden, num_out = numLatent, initialization = 'xavier', name = 'z_var', activation = 'exp')
+    z_var_layer = HiddenLayer(num_in = numHidden, num_out = numLatent, activation = 'exp')
+
+    z_mean = z_mean_layer.output(encoder_output)
+    z_var = z_var_layer.output(encoder_output)
 
     z_sampled = srng.normal(size = (config['mb_size'], numLatent))
 
-    z = z_sampled * z_var.output + z_mean.output
+    z = z_sampled * z_var + z_mean
 
     if config["dataset"] == "imagenet":
         from Decoders.Imagenet import imagenet_decoder
         decoder = imagenet_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
-    elif config["dataset"] == "svhn":
+    elif config["dataset"] == "svhn" or config['dataset'] == 'cifar':
         from Decoders.Svhn import svhn_decoder
         decoder = svhn_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
     else:
         raise Exception()
 
-    decoder_layers = decoder['layers'].values()
+    decoder_layers = decoder['layers']
     x_reconstructed = decoder['output']
     x_sampled = decoder['output_generated']
+    decoder_extra_params = decoder['extra_params']
 
-    layers = [z_mean,z_var] + encoder_layers + decoder_layers
+    layers = [z_mean_layer,z_var_layer] + encoder_layers + decoder_layers
 
-    params = {}
+    params = []
 
+    layerIndex = 0
     for layer in layers: 
+        layerIndex += 1
         layerParams = layer.getParams()
         for paramKey in layerParams: 
-            params[paramKey] = layerParams[paramKey]
-            print "param shape", layerParams[paramKey].get_value().shape
+            params += [layerParams[paramKey]]
 
-    print "params", params
+    params += encoder_extra_params + decoder_extra_params
 
-    variational_loss = 0.5 * T.sum(z_mean.output**2 + z_var.output - T.log(z_var.output) - 1.0)
+    for param in params:
+        print param.get_value().shape
 
+    variational_loss = 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
 
 
     #y_out_sig = T.nnet.sigmoid(x_reconstructed)
@@ -132,7 +145,7 @@ if __name__ == "__main__":
 
     #square_loss = T.sum(-1.0 * (y_obs_sig) * T.log(y_out_sig) - 1.0 * (1.0 - y_obs_sig) * T.log(1.0 - y_out_sig))
 
-    square_loss = 0.0 * T.sum(T.sqr(x - x_reconstructed))
+    square_loss = 100.0 * T.mean(T.sqr(x - x_reconstructed))
 
     loss = 0.0
 
@@ -140,25 +153,29 @@ if __name__ == "__main__":
 
     dist_style, dist_content = get_dist(x_reconstructed, x, config)
 
-    loss += sum(dist_style.values()) + sum(dist_content.values())
+    style_loss = 10.0 * sum(dist_style.values())
+    content_loss = 100.0 * sum(dist_content.values())
 
-    loss += variational_loss
+    loss += style_loss + content_loss
 
-    updateObj = Updates(params, loss, config["learning_rate"])
+    loss += 1.0 * variational_loss
 
-    updates = updateObj.getUpdates()
+    #updateObj = Updates(params, loss, config["learning_rate"])
+    #updates = updateObj.getUpdates()
+
+    updates = lasagne.updates.adam(loss, params)
 
     print "starting compilation"
     t0 = time.time()
 
-    train = theano.function(inputs = [x], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'overfeat_loss' : sum(dist_style.values()) + sum(dist_content.values()), 'variational_loss' : variational_loss, 'samples' : x_reconstructed, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean.output, 'z_var' : z_var.output, 'loss_style' : sum(dist_style.values()), 'loss_content' : sum(dist_content.values())}, updates = updates)
+    train = theano.function(inputs = [x], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'overfeat_loss' : sum(dist_content.values()), 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss}, updates = updates)
 
     #dist_content.update(dist_style)
     #get_losses = theano.function(inputs = [x], outputs = dist_content)
 
     print "Finished compiling training function in", time.time() - t0
 
-    sample = theano.function(inputs = [], outputs = [x_sampled])
+    #sample = theano.function(inputs = [], outputs = [x_sampled])
 
     total_loss_lst = []
     square_loss_lst = []
@@ -180,6 +197,8 @@ if __name__ == "__main__":
 
         x = x_batch['x']
 
+        #print "X INPUT SHAPE", x.shape
+
         if x.shape[0] != config['mb_size']:
             x_batch = data.getBatch()
             x = x_batch['x']
@@ -196,8 +215,8 @@ if __name__ == "__main__":
 
         if iteration % config["report_epoch_ratio"] == 0: 
 
-            print 'style loss', results['loss_style']
-            print 'content loss', results['loss_content']
+            print 'style loss', results['style_loss']
+            print 'content loss', results['content_loss']
 
             #il = get_losses(x)
             #for key in sorted(il.keys()):
@@ -206,7 +225,7 @@ if __name__ == "__main__":
             print "z mean", results["z_mean"].min(), results['z_mean'].max()
             print "z var", results['z_var'].min(), results["z_var"].max()
 
-            ys = y[0]
+            ys = np.clip(y[0], 0.0, 255.0)
             ys_rec = np.clip(results['reconstruction'][0], 0.0, 255.0)
             print "ys rec max", results['reconstruction'].max()
             print "ys rec min", results['reconstruction'].min()

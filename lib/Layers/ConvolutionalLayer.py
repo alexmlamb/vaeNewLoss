@@ -16,11 +16,11 @@ rng = np.random.RandomState(23455)
 
 class Weight(object):
 
-    def __init__(self, w_shape, mean=0, std=1.0, name = "", mode = ""):
+    def __init__(self, w_shape, mean=0, std=1.0):
         super(Weight, self).__init__()
         if std != 0:
 
-            print "conv layer with name", name, "using std of", std
+            print "conv layer using std of", std
             self.np_values = np.asarray(
                1.0 * rng.normal(mean, std, w_shape), dtype=theano.config.floatX)
 
@@ -28,88 +28,70 @@ class Weight(object):
             self.np_values = np.cast[theano.config.floatX](
                 mean * np.ones(w_shape, dtype=theano.config.floatX))
 
-        self.val = theano.shared(value=self.np_values, name = name)
-
-    def save_weight(self, dir, name):
-        print 'weight saved: ' + name
-        np.save(dir + name + '.npy', self.val.get_value())
-
-    def load_weight(self, dir, name):
-        print 'weight loaded: ' + name
-        self.np_values = np.load(dir + name + '.npy')
-        self.val.set_value(self.np_values)
-
+        self.val = theano.shared(value=self.np_values)
 
 
 class ConvPoolLayer(object):
 
-    def __init__(self, input, in_channels, out_channels, kernel_len, in_rows, in_columns, batch_size, convstride, padsize, poolsize, poolstride, bias_init, name, paramMap, activation = "relu", batch_norm = False):
+    def __init__(self, in_channels, out_channels, kernel_len, stride = 1, activation = "relu", batch_norm = False):
+
+        self.convstride = stride
+        self.padsize = 1
+        self.batch_norm = batch_norm
+        bias_init = 0.0
+        self.activation = activation
 
         std = 0.02
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
 
-        self.W = Weight(self.filter_shape, name = name + "_W", std = std, mode = 'conv')
-        self.b = Weight(self.filter_shape[3], bias_init, std=0, name = name + "_b", mode = 'conv')
-        self.R = Weight((in_channels,1,1,out_channels), name = name + "_R", mean = 0.01, std = std, mode = 'conv')
+        #If this layer doesn't change the shape of the input, add a residual-layer style skip connection.  
+        if in_channels == out_channels and self.convstride == 1:
+            self.residual = True
+        else:
+            self.residual = False
+
+        self.W = Weight(self.filter_shape, std = std)
+        self.b = Weight(self.filter_shape[3], bias_init, std=0)
 
         if batch_norm:
             self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))
             self.bn_std = theano.shared(np.random.normal(1.0, 0.001, size = (1,out_channels,1,1)).astype('float32'))
 
-        if paramMap != None:
-            print "shapes"
-            print paramMap[name + "_W"].get_value().shape
-            print self.W.val.get_value().shape
-            self.W.val.set_value(paramMap[name + "_W"].get_value())
-            self.b.val.set_value(paramMap[name + "_b"].get_value())
 
-        #Input: Batch, rows, columns, channels
-        #Output: Batch, channels, rows, columns
-        #input_shuffled = input.dimshuffle(0, 3, 1, 2)  # c01b to bc01
+    def output(self, input):
 
-        input_shuffled = input
-
-            # in01out to outin01
-            # print image_shape_shuffled
-            # print filter_shape_shuffled
         W_shuffled = self.W.val.dimshuffle(3, 0, 1, 2)  # c01b to bc01
-        R_shuffled = self.R.val.dimshuffle(3,0,1,2)
 
-        conv_out = dnn.dnn_conv(img=input_shuffled,
+        conv_out = dnn.dnn_conv(img=input,
                                         kerns=W_shuffled,
-                                        subsample=(convstride, convstride),
-                                        border_mode=padsize,
-                                        )
+                                        subsample=(self.convstride, self.convstride),
+                                        border_mode=self.padsize)
 
-        conv_out_residual = dnn.dnn_conv(img=input_shuffled,kerns=R_shuffled,subsample=(convstride,convstride),border_mode=0)
+        conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
 
-        if not batch_norm:
-            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
-        else:
-            conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
-
-        if batch_norm:
+        if self.batch_norm:
             conv_out = (conv_out - T.mean(conv_out, axis = (0,2,3), keepdims = True)) / (1.0 + T.std(conv_out, axis=(0,2,3), keepdims = True))
             conv_out = conv_out * T.addbroadcast(self.bn_std,0,2,3) + T.addbroadcast(self.bn_mean, 0,2,3)
 
         self.out_store = conv_out
 
-        if activation == "relu":
-            self.output = T.maximum(0.0, conv_out) + conv_out_residual
-        elif activation == "tanh":
-            self.output = T.tanh(conv_out)
-        elif activation == None:
-            self.output = conv_out
+        if self.activation == "relu":
+            self.out = T.maximum(0.0, conv_out)
+        elif self.activation == "tanh":
+            self.out = T.tanh(conv_out)
+        elif self.activation == None:
+            self.out = conv_out
 
-        if poolsize != 1:
-            self.output = dnn.dnn_pool(self.output,ws=(poolsize, poolsize),stride=(poolstride, poolstride))
+        if self.residual:
+            self.out += input
 
+        self.params = {'W' : self.W.val, 'b' : self.b.val}
 
-        self.params = {name + '_W' : self.W.val, name + '_b' : self.b.val, name + "_R" : self.R.val}
+        if self.batch_norm:
+            self.params["mu"] = self.bn_mean
+            self.params["sigma"] = self.bn_std
 
-        if batch_norm:
-            self.params[name + "_mu"] = self.bn_mean
-            self.params[name + "_sigma"] = self.bn_std
+        return self.out
 
     def getParams(self):
         return self.params

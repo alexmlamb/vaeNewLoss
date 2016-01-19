@@ -5,11 +5,12 @@ import numpy.random as rng
 
 class HiddenLayer: 
 
-    def __init__(self, num_in, num_out, activation = None, batch_norm = False): 
+    def __init__(self, num_in, num_out, activation = None, batch_norm = False, flatten_input = False): 
 
         self.params = {}
         self.activation = activation
         self.batch_norm = batch_norm
+        self.flatten_input = flatten_input
 
         std = np.sqrt(2.0 / (num_out + num_in))
 
@@ -33,7 +34,12 @@ class HiddenLayer:
             self.params["mu"] = self.bn_mean
             self.params["sigma"] = self.bn_std
 
-    def output(self, input):
+    def output(self, input_raw):
+
+        if self.flatten_input:
+            input = input_raw.flatten(2)
+        else:
+            input = input_raw
 
         lin_output = T.dot(input, self.W) + self.b
 

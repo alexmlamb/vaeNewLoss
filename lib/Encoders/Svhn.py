@@ -1,14 +1,39 @@
 from Layers.ConvolutionalLayer import ConvPoolLayer
 from Layers.HiddenLayer import HiddenLayer
+from Data.load_imagenet import normalize
 
-def svhn_encoder(x, numHidden):
-    h1 = HiddenLayer(x.flatten(2), num_in = 32 * 32 * 3, num_out = numHidden, initialization = 'xavier', name = "h1", activation = "relu")
+def svhn_encoder(x, numHidden, mb_size, image_width):
 
-    h2 = HiddenLayer(h1.output, num_in = numHidden, num_out = numHidden, initialization = 'xavier', name = "h2", activation = "relu")
+    in_width = image_width
+    layerLst = []
 
-    layers = {'h1' : h1, 'h2' : h2}
+    c = [3, 128, 128, 256, 512]
 
-    return {'layers' : layers, 'output' : h2.output}
+    layerLst += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3)]
+    #layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3, stride=2)]
+
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = 128, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 256, kernel_len = 3, stride=2)]
+
+    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
+    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 512, kernel_len = 3, stride=2)]
+
+    layerLst += [HiddenLayer(num_in = 4 * 4 * 512, num_out = numHidden, flatten_input = True, batch_norm = True)]
+
+    layerLst += [HiddenLayer(num_in = numHidden, num_out = numHidden, batch_norm = True)]
+
+    outputs = [normalize(x.transpose(0,3,1,2))]
+
+    for i in range(0, len(layerLst)):
+        outputs += [layerLst[i].output(outputs[-1])]
+
+    return {'layers' : layerLst, 'extra_params' : [], 'output' : outputs[-1]}
 
 
 def svhn_encoder_1(x,numHidden):

@@ -1,19 +1,34 @@
 from Layers.HiddenLayer import HiddenLayer
 from Layers.DeConvLayer import DeConvLayer
-
-def svhn_decoder(z, z_sampled, numLatent, numHidden, mb_size):
-
-
-    h3 = HiddenLayer(z, num_in = numLatent, num_out = numHidden, initialization = 'xavier', name = "h3", activation = 'relu', batch_norm = False)
-
-    h4 = HiddenLayer(h3.output, num_in = numHidden, num_out = 32 * 32 * 3, initialization = 'xavier', name = "h4", activation = None, batch_norm = False)
-
-    h3_generated = HiddenLayer(z_sampled, num_in = numLatent, num_out = numHidden, initialization = 'xavier', paramMap = h3.getParams(), name = "h3", activation = 'relu', batch_norm = False)
-
-    h4_generated = HiddenLayer(h3_generated.output, num_in = numHidden, num_out = 32 * 32 * 3, initialization = 'xavier', paramMap = h4.getParams(), name = "h4", activation = None, batch_norm = False)
+from Layers.ConvolutionalLayer import ConvPoolLayer
 
 
-    return {'layers' : {'h3' : h3, 'h4' : h4}, 'output' : h4.output.reshape((128,32,32,3)), 'output_generated' : h4_generated.output.reshape((128,32,32,3))}
+def svhn_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
+
+    layers = []
+
+    layers += [HiddenLayer(num_in = numLatent, num_out = numHidden, activation = 'relu', batch_norm = True)]
+
+    layers += [HiddenLayer(num_in = numHidden, num_out = 256 * 4 * 4, activation = 'relu', batch_norm = True)]
+
+    layers += [DeConvLayer(in_channels = 256, out_channels = 128, kernel_len = 5, activation = 'relu', unflatten_input = (mb_size, 256, 4, 4))]
+    layers += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3, activation = 'relu', batch_norm = True)]
+    layers += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3, activation = 'relu', batch_norm = True)]
+    layers += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3, activation = 'relu', batch_norm = True)]
+    layers += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3, activation = 'relu', batch_norm = True)]
+    layers += [DeConvLayer(in_channels = 128, out_channels = 64, kernel_len = 5, activation = 'relu')]
+    layers += [ConvPoolLayer(in_channels = 64, out_channels = 64, kernel_len = 3, activation = 'relu')]
+    layers += [ConvPoolLayer(in_channels = 64, out_channels = 64, kernel_len = 3, activation = 'relu')]
+    layers += [DeConvLayer(in_channels = 64, out_channels = 3, kernel_len = 5, activation = None)]
+
+    generated_outputs = [z_sampled]
+    reconstruction_outputs = [z]
+
+    for i in range(0, len(layers)):
+        generated_outputs += [layers[i].output(generated_outputs[-1])]
+        reconstruction_outputs += [layers[i].output(reconstruction_outputs[-1])]
+
+    return {'layers' : layers, 'extra_params' : [], 'output' : reconstruction_outputs[-1].transpose(0,2,3,1), 'output_generated' : generated_outputs[-1].transpose(0,2,3,1)}
 
 
 

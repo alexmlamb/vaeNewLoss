@@ -11,6 +11,48 @@ import numpy as np
 
 import theano
 
+def vgg_network(x, mb_size, image_width):
+    def normalize(x):
+        return (x.transpose(0,3,1,2)[:,::-1,:,:] - np.array([104, 117, 123]).reshape((1,3,1,1)).astype('float32'))
+
+    obj = pickle.load(open('model_files/vgg19_normalized.pkl'))
+
+    params = obj['param values']
+
+    xn = normalize(x)
+
+    net = {}
+    net['input'] = InputLayer((mb_size, 3, image_width, image_width))
+    net['conv1_1'] = ConvLayer(net['input'], 64, 3, pad=1)
+    net['conv1_2'] = ConvLayer(net['conv1_1'], 64, 3, pad=1)
+    net['pool1'] = PoolLayer(net['conv1_2'], 2, mode='average_exc_pad')
+    net['conv2_1'] = ConvLayer(net['pool1'], 128, 3, pad=1)
+    net['conv2_2'] = ConvLayer(net['conv2_1'], 128, 3, pad=1)
+    net['pool2'] = PoolLayer(net['conv2_2'], 2, mode='average_exc_pad')
+    net['conv3_1'] = ConvLayer(net['pool2'], 256, 3, pad=1)
+    net['conv3_2'] = ConvLayer(net['conv3_1'], 256, 3, pad=1)
+    net['conv3_3'] = ConvLayer(net['conv3_2'], 256, 3, pad=1)
+    net['conv3_4'] = ConvLayer(net['conv3_3'], 256, 3, pad=1)
+    net['pool3'] = PoolLayer(net['conv3_4'], 2, mode='average_exc_pad')
+    net['conv4_1'] = ConvLayer(net['pool3'], 512, 3, pad=1)
+    net['conv4_2'] = ConvLayer(net['conv4_1'], 512, 3, pad=1)
+    net['conv4_3'] = ConvLayer(net['conv4_2'], 512, 3, pad=1)
+    net['conv4_4'] = ConvLayer(net['conv4_3'], 512, 3, pad=1)
+    net['pool4'] = PoolLayer(net['conv4_4'], 2, mode='average_exc_pad')
+    net['conv5_1'] = ConvLayer(net['pool4'], 512, 3, pad=1)
+    net['conv5_2'] = ConvLayer(net['conv5_1'], 512, 3, pad=1)
+    net['conv5_3'] = ConvLayer(net['conv5_2'], 512, 3, pad=1)
+    net['conv5_4'] = ConvLayer(net['conv5_3'], 512, 3, pad=1)
+    net['pool5'] = PoolLayer(net['conv5_4'], 2, mode='average_exc_pad')
+
+    lasagne.layers.set_all_param_values(net['pool5'], params)
+
+    output = lasagne.layers.get_output(net['pool5'], xn)
+
+    vgg_params = lasagne.layers.get_all_params(net['pool5'], trainable=True)
+
+    return {'params' : vgg_params, 'output' : output}
+
 '''
 Assumes that x is of the shape: 
 
@@ -20,7 +62,7 @@ With raw RGB (no normalization).
 
 '''
 
-def vgg_network(x1, x2, params, config):    
+def vgg_network_pair(x1, x2, params, config):    
 
     def normalize(x):
         return (x.transpose(0,3,1,2)[:,::-1,:,:] - np.array([104, 117, 123]).reshape((1,3,1,1)).astype('float32'))
@@ -103,28 +145,29 @@ def multiplier(key, image_width, t):
 
 
 def gram_matrix(x, mb_size):
-    x = x.flatten(3)
+    #x = x.flatten(3)
+    #prodLst = []
+    #for i in range(0, mb_size):
+    #    prodLst.append(T.tensordot(x[i:i+1], x[i:i+1], axes = ([2], [2])))
+    #return T.concatenate(prodLst, axis = 0)
 
-    prodLst = []
-
-    for i in range(0, mb_size):
-        prodLst.append(T.tensordot(x[i:i+1], x[i:i+1], axes = ([2], [2])))
-
-    return T.concatenate(prodLst, axis = 0)
+    return (x.dimshuffle(0, 'x', 1, 2, 3) * x.dimshuffle(0, 1, 'x', 2, 3)).sum(axis=[3, 4]).flatten(ndim=2)
 
 def get_dist(x1, x2, config):
     obj = pickle.load(open('model_files/vgg19_normalized.pkl'))
 
     params = obj['param values']
 
-    o1,o2 = vgg_network(x1, x2, params, config)
+    o1,o2 = vgg_network_pair(x1, x2, params, config)
 
     dist_style = {}
     dist_content = {}
 
+    
+
     for key in o1:
 
-        if key in ["pool1", "pool2", "pool3", "pool4", "pool5", "conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", "conv3_2", "conv3_3", "conv3_4", "conv4_1", "conv4_2", "conv4_3", "conv4_4", "conv5_1", "conv5_2", "conv5_3", "conv5_4"]:
+        if key in ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", "conv3_2", "conv3_3", "conv3_4"]:
             gram1 = gram_matrix(o1[key], config['mb_size'])
             gram2 = gram_matrix(o2[key], config['mb_size'])
 
@@ -146,27 +189,22 @@ if __name__ == "__main__":
 
     x = T.tensor4()
 
+    import time
+
     config = {}
 
-    config['mb_size'] = 100
+    config['mb_size'] = 2
     config['image_width'] = 32
 
-    o = vgg_network(x, p, config)
+    t0 = time.time()
+    f = theano.function(inputs = [x], outputs = get_dist(x, x, config))
+    print time.time() - t0, "time to compile"
 
-    f = theano.function(inputs = [x], outputs = [o['pool5']])
+    x = np.random.uniform(size = (config['mb_size'], 32, 32, 3)).astype('float32')
 
-    x = np.random.uniform(size = (100, 32, 32, 3)).astype('float32')
-
-    print f(x)[0].shape
-
-
-    x = theano.shared(np.random.uniform(size = (10, 3, 8, 8)).astype('float32'))
-
-    g = gram_matrix(x, 10)
-
-    f = theano.function(inputs = [], outputs = [g])
-
-    print f()[0].shape
+    t0 = time.time()
+    print "gram matrix shape", f(x).shape
+    print "time to run", time.time() - t0
 
 
 
