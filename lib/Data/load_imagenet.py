@@ -2,7 +2,8 @@ import glob
 from PIL import Image
 import numpy as np
 
-
+def normalize(x):
+    return (x / 127.5) - 1.0
 
 class ImageNetData:
 

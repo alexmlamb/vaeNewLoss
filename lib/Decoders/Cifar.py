@@ -10,9 +10,9 @@ def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
 
     layers = []
 
-    layers += [HiddenLayer(num_in = numLatent, num_out = 2048, activation = 'relu', batch_norm = True)]
+    layers += [HiddenLayer(num_in = numLatent, num_out = 1024, activation = 'relu', batch_norm = True)]
 
-    layers += [HiddenLayer(num_in = 2048, num_out = 256 * 8 * 8, activation = 'relu', batch_norm = True)]
+    layers += [HiddenLayer(num_in = 1024, num_out = 256 * 8 * 8, activation = 'relu', batch_norm = True)]
 
     layers += [DeConvLayer(in_channels = 256, out_channels = 128, kernel_len = 5, activation = 'relu', unflatten_input = (mb_size, 256, 8, 8))]
     layers += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3, activation = 'relu', batch_norm = True)]
@@ -32,7 +32,7 @@ def imagenet_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
         generated_outputs += [layers[i].output(generated_outputs[-1])]
         reconstruction_outputs += [layers[i].output(reconstruction_outputs[-1])]
 
-    return {'layers' : layers, 'extra_params' : [], 'output' : reconstruction_outputs[-1].transpose(0,2,3,1), 'output_generated' : generated_outputs[-1].transpose(0,2,3,1)}
+    return {'layers' : layers, 'extra_params' : [], 'output' : reconstruction_outputs[-1].reshape((mb_size,image_width,image_width,3)), 'output_generated' : generated_outputs[-1].reshape((mb_size,image_width,image_width,3))}
 
 
 

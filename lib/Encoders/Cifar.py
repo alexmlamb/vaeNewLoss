@@ -45,6 +45,10 @@ def imagenet_encoder_1(x, numHidden, mb_size, image_width):
     #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3)]
     #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3, stride=2)]
 
+    #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3)]
+    #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3)]
+    #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3)]
+    #layerLst += [ConvPoolLayer(in_channels = 512, out_channels = 512, kernel_len = 3, stride=2)]
 
     layerLst += [HiddenLayer(num_in = 4 * 4 * 256, num_out = numHidden, flatten_input = True)]
 
