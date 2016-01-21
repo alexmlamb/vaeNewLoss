@@ -42,6 +42,9 @@ class ConvPoolLayer(object):
         self.activation = activation
 
         std = 0.02
+
+        print "using std", std
+
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
 
         #If this layer doesn't change the shape of the input, add a residual-layer style skip connection.  

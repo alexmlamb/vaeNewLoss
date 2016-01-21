@@ -14,7 +14,6 @@ from ConvolutionalLayer import Weight
 
 from PIL import Image
 
-from Classifiers.imagenet_classifier import get_overfeat_diff
 
 
 def deconv(X, w, subsample=(1, 1), border_mode=(0, 0), conv_mode='conv'):
@@ -42,9 +41,8 @@ class DeConvLayer(object):
         self.W = Weight(self.filter_shape, std = std).val
         self.b = Weight(self.filter_shape[1], 0.0, std=0).val
         if batch_norm:
-            self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_mean")
-            self.bn_std = theano.shared(np.random.normal(1.0, 0.000001, size = (1,out_channels,1,1)).astype('float32'), name = name + "_bn_std")
-
+            self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))
+            self.bn_std = theano.shared(np.random.normal(1.0, 0.000001, size = (1,out_channels,1,1)).astype('float32'))
 
     def output(self, input):
 

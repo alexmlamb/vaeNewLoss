@@ -14,6 +14,7 @@ class HiddenLayer:
 
         std = np.sqrt(2.0 / (num_out + num_in))
 
+        self.residual = (num_in == num_out) and (not flatten_input)
 
         W_values = 1.0 * np.asarray(rng.normal(size=(num_in, num_out), scale = std), dtype=theano.config.floatX)
         self.W = theano.shared(value=W_values)
@@ -60,8 +61,12 @@ class HiddenLayer:
         else: 
             raise Exception("Activation not found")
 
-        return activation(lin_output)
+        out = activation(lin_output)
 
+        if self.residual:
+            return out + input_raw
+        else:
+            return out
 
     def getParams(self): 
         return self.params
