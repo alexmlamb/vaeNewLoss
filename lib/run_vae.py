@@ -36,7 +36,7 @@ sys.setrecursionlimit(990000)
 # from Predictor import c1_diff
 
 
-theano.config.flaotX = 'float32'
+theano.config.floatX = 'float32'
 
 
 if __name__ == "__main__":
@@ -56,8 +56,7 @@ if __name__ == "__main__":
 
     print "compiled hidden grabber"
 
-    # 0.001 works
-    config["learning_rate"] = 0.0001
+    config["learning_rate"] = 0.0001  # 0.001 works
     config["number_epochs"] = 20000000
     config["report_epoch_ratio"] = 5
     config["popups"] = True
