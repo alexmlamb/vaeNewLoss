@@ -4,18 +4,23 @@ def get_config():
 
     config = {}
 
-    config["mb_size"] = 96
+    config["mb_size"] = 50
 
-    config['dataset'] = 'cifar'
+    #config['dataset'] = 'cifar'
     #config["dataset"] = "svhn"
-    #config['dataset'] = 'imagenet'
+    config['dataset'] = 'imagenet'
+    #config['dataset'] = 'celeb'
 
     if config["dataset"] == "svhn":
         config["image_width"] = 32
     elif config['dataset'] == 'imagenet':
         config["image_width"] = 128
+        config["num_labels"] = 1
     elif config['dataset'] == 'cifar':
         config['image_width'] = 32
+        config['num_labels'] = 10
+    elif config['dataset'] == 'celeb':
+        config['image_width'] = 128
 
     config["imagenet_location"] = "/u/lambalex/data/imagenet/"
     config["cifar_location"] = "/u/lambalex/data/cifar/cifar-10-batches-py/"

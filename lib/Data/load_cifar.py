@@ -18,6 +18,7 @@ class CifarData:
         self.lastIndex = 0
 
         xl = []
+        yl = []
 
         for batch in batches: 
             dataFile = open(config['cifar_location'] + batch, "rb")
@@ -28,8 +29,12 @@ class CifarData:
 
             print "batch", obj.keys()
             xl += [obj["data"].reshape((10000, 3, 32, 32)).transpose(0,2,3,1).astype('float32')]
-        
+            yl += [np.asarray(obj["labels"])]
+
         self.images = np.concatenate(xl)
+
+        self.labels = np.concatenate(yl)
+
 
         self.numExamples = self.images.shape[0]
 
@@ -53,8 +58,9 @@ class CifarData:
             self.lastIndex = 0
 
         x = self.images[index : index + self.mb_size]
+        labels = self.labels[index : index + self.mb_size]
 
-        return {'x' : x}
+        return {'x' : x, 'labels' : labels.astype('int32')}
 
 if __name__ == "__main__":
 

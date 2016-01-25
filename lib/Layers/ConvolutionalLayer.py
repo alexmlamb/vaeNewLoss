@@ -33,15 +33,24 @@ class Weight(object):
 
 class ConvPoolLayer(object):
 
-    def __init__(self, in_channels, out_channels, kernel_len, stride = 1, activation = "relu", batch_norm = False):
+    def __init__(self, in_channels, out_channels, kernel_len, stride = 1, activation = "relu", batch_norm = False, unflatten_input = None):
 
         self.convstride = stride
-        self.padsize = 1
+        if kernel_len == 1:
+            self.padsize = 0
+        elif kernel_len == 3:
+            self.padsize = 1
+        elif kernel_len == 5:
+            self.padsize = 2
+        else:
+            raise Exception()
         self.batch_norm = batch_norm
         bias_init = 0.0
         self.activation = activation
+        self.unflatten_input = unflatten_input
 
-        std = 0.02
+
+        std = np.sqrt(2.0 / ((in_channels + out_channels) * kernel_len * kernel_len))
 
         print "using std", std
 
@@ -62,6 +71,9 @@ class ConvPoolLayer(object):
 
 
     def output(self, input):
+
+        if self.unflatten_input != None:
+            input = T.reshape(input, self.unflatten_input)
 
         W_shuffled = self.W.val.dimshuffle(3, 0, 1, 2)  # c01b to bc01
 
@@ -86,6 +98,7 @@ class ConvPoolLayer(object):
             self.out = conv_out
 
         if self.residual:
+            print "USING RESIDUAL"
             self.out += input
 
         self.params = {'W' : self.W.val, 'b' : self.b.val}

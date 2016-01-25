@@ -7,24 +7,21 @@ def svhn_encoder(x, numHidden, mb_size, image_width):
     in_width = image_width
     layerLst = []
 
-    c = [3, 128, 128, 256, 512]
+    c = [3, 64, 128, 256, 256]
 
-    layerLst += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3)]
-    #layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3, stride=2)]
+    layerLst += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 5, stride=2, batch_norm = True)]
 
-    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = 128, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 128, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 128, out_channels = 256, kernel_len = 3, stride=2)]
+    layerLst += [ConvPoolLayer(in_channels = c[1], out_channels = c[2], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[2], out_channels = c[2], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[2], out_channels = c[2], kernel_len = 5, stride=2, batch_norm = True)]
 
-    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 256, kernel_len = 3)]
-    layerLst += [ConvPoolLayer(in_channels = 256, out_channels = 512, kernel_len = 3, stride=2)]
+    layerLst += [ConvPoolLayer(in_channels = c[2], out_channels = c[3], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[3], out_channels = c[3], kernel_len = 5, batch_norm = True)]
+    layerLst += [ConvPoolLayer(in_channels = c[3], out_channels = c[4], kernel_len = 5, stride=2, batch_norm = True)]
 
-    layerLst += [HiddenLayer(num_in = 4 * 4 * 512, num_out = numHidden, flatten_input = True, batch_norm = True)]
+    layerLst += [HiddenLayer(num_in = 4 * 4 * c[4], num_out = numHidden, flatten_input = True, batch_norm = True)]
 
     layerLst += [HiddenLayer(num_in = numHidden, num_out = numHidden, batch_norm = True)]
 

@@ -37,9 +37,12 @@ class DeConvLayer(object):
 
         self.batch_norm = batch_norm
 
-        std = 0.02
-        self.W = Weight(self.filter_shape, std = std).val
-        self.b = Weight(self.filter_shape[1], 0.0, std=0).val
+        std = np.sqrt(2.0 / ((in_channels + out_channels) * kernel_len * kernel_len))
+
+        print "deconv using std", std
+
+        self.W = Weight(self.filter_shape, mean = 1.0, std = 0.0 * std).val
+        self.b = Weight(self.filter_shape[1], mean = 0.0, std=0).val
         if batch_norm:
             self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))
             self.bn_std = theano.shared(np.random.normal(1.0, 0.000001, size = (1,out_channels,1,1)).astype('float32'))
@@ -84,9 +87,18 @@ if __name__ == "__main__":
 
     x = T.tensor4()
 
-    #(4,4,512)
+    dc = DeConvLayer(in_channels = 1, out_channels = 1, kernel_len = 8, activation = None)
 
-    w = theano.shared(0.01 * np.random.normal(size = (100,4,4,2048)).astype('float32'), name = 'w')
+    x_gen = np.ones(shape = (1, 1, 16, 16)).astype('float32')
+
+    print "compiling"
+
+    f = theano.function([x], dc.output(x))
+
+    for val in f(x_gen)[0][0]:
+        print val
+
+
 
 
 

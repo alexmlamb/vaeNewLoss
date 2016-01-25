@@ -88,7 +88,7 @@ class ImageNetData:
 
         self.lastIndex = index + 1
 
-        return {'x' : x, 'x_4' : x_4, 'x_8' : x_8, 'x_16' : x_16, 'x_32' : x_32}
+        return {'x' : x, 'x_4' : x_4, 'x_8' : x_8, 'x_16' : x_16, 'x_32' : x_32, 'labels' : np.zeros(self.mb_size).astype('int32')}
 
 if __name__ == "__main__":
 
