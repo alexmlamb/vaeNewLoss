@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
     updates = lasagne.updates.adam(loss, params)
 
-    print "starting compilation"
+    print "Compiling ...",
     t0 = time.time()
 
     train = theano.function(inputs=[x], outputs={'total_loss': loss, 'square_loss': square_loss, 'overfeat_loss': sum(dist_content.values()), 'variational_loss': variational_loss, 'samples': x_sampled, 'reconstruction': x_reconstructed, 'g': T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean': z_mean, 'z_var': z_var, 'style_loss': style_loss, 'content_loss': content_loss}, updates=updates)
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     # dist_content.update(dist_style)
     # get_losses = theano.function(inputs = [x], outputs = dist_content)
 
-    print "Finished compiling training function in", time.time() - t0
+    print "Done in {:.4f}sec.".format(time.time() - t0)
 
     # sample = theano.function(inputs = [], outputs = [x_sampled])
 
@@ -182,6 +182,7 @@ if __name__ == "__main__":
 
     iteration = -1
 
+    t1 = time.time()
     while True:
 
         iteration += 1
@@ -230,6 +231,7 @@ if __name__ == "__main__":
             print "=============================================="
 
             print "iteration", str(iteration / config["report_epoch_ratio"])
+            print "Training time {:.4f}sec.".format(time.time()-t1)
 
             print "dy/dx", results['g']
 
