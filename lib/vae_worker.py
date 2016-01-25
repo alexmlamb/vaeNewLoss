@@ -32,6 +32,9 @@ import pprint
 import sys
 sys.setrecursionlimit(990000)
 
+from platoon.channel import Worker
+from platoon.param_sync import EASGD
+
 # from Classifiers.SvhnPredictor import c1_diff
 # from Predictor import c1_diff
 
@@ -41,8 +44,10 @@ theano.config.floatX = 'float32'
 
 if __name__ == "__main__":
 
-    config = get_config()
+    worker = Worker(control_port=43437)
+    device = theano.config.device
 
+    config = get_config()
     config["layer_weighting"] = {'y': 1.0}
 
     if config['dataset'] == "imagenet":
@@ -56,14 +61,11 @@ if __name__ == "__main__":
 
     print "compiled hidden grabber"
 
+    # TODO : This should all be in the config file or get rid of it.
     config["learning_rate"] = 0.0001  # 0.001 works
     config["number_epochs"] = 20000000
     config["report_epoch_ratio"] = 5
     config["popups"] = True
-
-    experimentDir = config['plot_output_directory'] + "exp_" + str(int(time.time()))
-    os.mkdir(experimentDir)
-
     config["experiment_type"] = "original_layer"
 
     numHidden = 2048
@@ -72,9 +74,9 @@ if __name__ == "__main__":
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
 
     s = pprint.pformat(config)
-    configLogFile = open(experimentDir + "/log.txt", "w")
-    configLogFile.write(s)
-    configLogFile.close()
+    experimentDir = worker.send_req("get_exp_dir")
+    with open(os.path.join(experimentDir, "{}_log.txt".format(device)), "w") as configLogFile:
+        configLogFile.write(s)
 
     # N x 1
     x = T.tensor4()
@@ -130,6 +132,8 @@ if __name__ == "__main__":
 
     params += encoder_extra_params + decoder_extra_params
 
+    worker.init_shared_params(params, param_sync_rule=EASGD(1.0))
+
     for param in params:
         print param.get_value().shape
 
@@ -180,35 +184,41 @@ if __name__ == "__main__":
 
     print "running on data"
 
-    iteration = -1
+    nb_minibatches_before_sync = 1  # 10 from EASGD paper
 
+    iteration = 0
     t1 = time.time()
     while True:
+        step = worker.send_req('next')
+        print "# Received '{}' from Controller.".format(step)
 
-        iteration += 1
+        if step == 'train':
 
-        index = (iteration * config['mb_size']) % data.numExamples
+            for i in xrange(nb_minibatches_before_sync):
+                x_batch = data.getBatch()
+                x = x_batch['x']
+                # Skipping last mini-batch if not the right size
+                if x.shape[0] != config['mb_size']:
+                    x_batch = data.getBatch()
+                    x = x_batch['x']
 
-        x_batch = data.getBatch()
+                results = train(x)
 
-        x = x_batch['x']
+                total_loss_lst.append(results['total_loss'])
+                square_loss_lst.append(results['square_loss'])
+                overfeat_loss_lst.append(results['overfeat_loss'])
 
-        # print "X INPUT SHAPE", x.shape
+                variational_loss = results['variational_loss']
+                y = results['samples']
 
-        if x.shape[0] != config['mb_size']:
-            x_batch = data.getBatch()
-            x = x_batch['x']
+            iteration += nb_minibatches_before_sync
+            step = worker.send_req(dict(train_done=nb_minibatches_before_sync))
 
-        results = train(x)
+            print "Syncing with global params"
+            worker.sync_params(synchronous=True)
 
-        total_loss_lst.append(results['total_loss'])
-        square_loss_lst.append(results['square_loss'])
-        overfeat_loss_lst.append(results['overfeat_loss'])
-
-        variational_loss = results['variational_loss']
-        y = results['samples']
-
-        if iteration % config["report_epoch_ratio"] == 0:
+        if step == 'valid':
+            worker.copy_to_local()
 
             print 'style loss', results['style_loss']
             print 'content loss', results['content_loss']
@@ -229,21 +239,32 @@ if __name__ == "__main__":
             im3 = Image.fromarray(x[0].astype('uint8'), "RGB")
 
             print "=============================================="
-
-            print "iteration", str(iteration / config["report_epoch_ratio"])
+            print "iteration", iteration
             print "Training time {:.2f}sec.".format(time.time()-t1)
-
             print "dy/dx", results['g']
 
-            im.convert('RGB').save(experimentDir + "/iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
-            im2.convert('RGB').save(experimentDir + "/reconstruction_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
-            im3.convert('RGB').save(experimentDir + "/observed_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
+            image_type = "PNG"
+            im.convert('RGB').save(os.path.join(experimentDir, "{}_iteration_{}.{}".format(device, iteration, image_type)), image_type)
+            im2.convert('RGB').save(os.path.join(experimentDir, "{}_reconstruction_iteration_{}.{}".format(device, iteration, image_type)), image_type)
+            im3.convert('RGB').save(os.path.join(experimentDir, "{}_observed_iteration_{}.{}".format(device, iteration, image_type)), image_type)
 
             print "Total Loss", sum(total_loss_lst) * 1.0 / len(total_loss_lst)
             print "Square Loss", sum(square_loss_lst) * 1.0 / len(square_loss_lst)
             print "Overf Loss", sum(overfeat_loss_lst) * 1.0 / len(overfeat_loss_lst)
             print "Var Loss", variational_loss
 
+            step = worker.send_req(dict(valid_done=sum(total_loss_lst) * 1.0 / len(total_loss_lst)))
+
             total_loss_lst = []
             square_loss_lst = []
             overfeat_loss_lst = []
+
+            worker.copy_to_local()
+
+        if step == 'stop':
+            print "Stopping!"
+            break
+
+    # Release all shared ressources.
+    worker.close()
+    print "Worker terminated."
