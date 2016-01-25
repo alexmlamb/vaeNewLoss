@@ -25,6 +25,8 @@ from Data.load_imagenet import ImageNetData
 from Data.load_svhn import SvhnData
 from Data.load_cifar import CifarData
 
+from Layers.total_variation_denoising import total_denoising_variation_penalty
+
 from PIL import Image
 
 import os
@@ -59,8 +61,6 @@ if __name__ == "__main__":
 
     print "compiled hidden grabber"
 
-    #0.001 works
-    config["learning_rate"] = 0.0001
     config["number_epochs"] = 20000000
     config["report_epoch_ratio"] = 5
     config["popups"] = True
@@ -71,7 +71,9 @@ if __name__ == "__main__":
     config["experiment_type"] = "original_layer"
 
     numHidden = 2048
-    numLatent = 50
+    numLatent = 256
+
+    print "NUMBER OF LATENT DIMENSIONS", numLatent
 
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
 
@@ -82,9 +84,10 @@ if __name__ == "__main__":
 
     #N x 1
     x = T.tensor4()
+    labels = T.ivector()
 
     if config['dataset'] == 'imagenet':
-        from Encoders.Imagenet import imagenet_encoder as encoder_class
+        from Encoders.Imagenet import encoder as encoder_class
     elif config['dataset'] == 'svhn' or config['dataset'] == 'cifar':
         from Encoders.Svhn import svhn_encoder as encoder_class
     else:
@@ -100,19 +103,31 @@ if __name__ == "__main__":
 
     z_var_layer = HiddenLayer(num_in = numHidden, num_out = numLatent, activation = 'exp')
 
+
+    labels_reshaped = T.zeros(shape = (config['mb_size'], config['num_labels']))
+
+    #labels_reshaped = labels_reshaped.set_subtensor(T.arange(config['mb_size']), labels] = 1.0
+
+    labels_reshaped = T.set_subtensor(labels_reshaped[T.arange(config['mb_size']), labels], 1.0)
+
     z_mean = z_mean_layer.output(encoder_output)
     z_var = z_var_layer.output(encoder_output)
 
-    z_sampled = srng.normal(size = (config['mb_size'], numLatent))
+    #z_sampled = srng.normal(size = (config['mb_size'], numLatent))
+
+    z_sampled = T.matrix()
 
     z = z_sampled * z_var + z_mean
 
+    def join(a,b):
+        return T.concatenate([a,b], axis = 1)
+
     if config["dataset"] == "imagenet":
-        from Decoders.Imagenet import imagenet_decoder
-        decoder = imagenet_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+        from Decoders.Imagenet import decoder
+        decoder = decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
     elif config["dataset"] == "svhn" or config['dataset'] == 'cifar':
         from Decoders.Svhn import svhn_decoder
-        decoder = svhn_decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+        decoder = svhn_decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
     else:
         raise Exception()
 
@@ -123,6 +138,8 @@ if __name__ == "__main__":
 
     layers = [z_mean_layer,z_var_layer] + encoder_layers + decoder_layers
 
+    l2_loss = 0.0
+
     params = []
 
     layerIndex = 0
@@ -131,6 +148,9 @@ if __name__ == "__main__":
         layerParams = layer.getParams()
         for paramKey in layerParams: 
             params += [layerParams[paramKey]]
+            l2_loss += T.mean(T.sqr(params[-1]))
+
+    l2_loss = 0.0001 * T.sqrt(l2_loss)
 
     params += encoder_extra_params + decoder_extra_params
 
@@ -140,20 +160,21 @@ if __name__ == "__main__":
     variational_loss = 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
 
 
-    #y_out_sig = T.nnet.sigmoid(x_reconstructed)
-    #y_obs_sig = (observed_y + 1.0) / 2
+    smoothness_penalty = 0.0001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
 
-    #square_loss = T.sum(-1.0 * (y_obs_sig) * T.log(y_out_sig) - 1.0 * (1.0 - y_obs_sig) * T.log(1.0 - y_out_sig))
-
-    square_loss = 100.0 * T.mean(T.sqr(x - x_reconstructed))
+    square_loss = 1.0 * T.mean(T.sqr(x - x_reconstructed))
 
     loss = 0.0
 
+    loss += l2_loss
+
     loss += square_loss
 
-    dist_style, dist_content = get_dist(x_reconstructed, x, config)
+    loss += smoothness_penalty
 
-    style_loss = 10.0 * sum(dist_style.values())
+    dist_style, dist_content = get_dist(x, x_reconstructed, config)
+
+    style_loss = 50.0 * dist_style
     content_loss = 100.0 * sum(dist_content.values())
 
     loss += style_loss + content_loss
@@ -163,12 +184,13 @@ if __name__ == "__main__":
     #updateObj = Updates(params, loss, config["learning_rate"])
     #updates = updateObj.getUpdates()
 
-    updates = lasagne.updates.adam(loss, params)
+    updates = lasagne.updates.adam(loss, params, learning_rate = 0.0001)
 
     print "starting compilation"
     t0 = time.time()
 
-    train = theano.function(inputs = [x], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'overfeat_loss' : sum(dist_content.values()), 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss}, updates = updates)
+    train = theano.function(inputs = [x, labels, z_sampled], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'overfeat_loss' : sum(dist_content.values()), 'variational_loss' : variational_loss, 'samples' : x_reconstructed, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss, "smoothness_penalty" : smoothness_penalty}, updates = updates)
+
 
     #dist_content.update(dist_style)
     #get_losses = theano.function(inputs = [x], outputs = dist_content)
@@ -196,15 +218,19 @@ if __name__ == "__main__":
         x_batch = data.getBatch()
 
         x = x_batch['x']
+        labels = x_batch['labels']
+
+        #print "LABELS", labels
 
         #print "X INPUT SHAPE", x.shape
 
         if x.shape[0] != config['mb_size']:
             x_batch = data.getBatch()
             x = x_batch['x']
+            labels = x_batch['labels']
 
-        results = train(x)
-
+        z_sampled = np.random.normal(size = (config['mb_size'], numLatent)).astype('float32')
+        results = train(x, labels, z_sampled)
 
         total_loss_lst.append(results['total_loss'])
         square_loss_lst.append(results['square_loss'])
@@ -217,6 +243,8 @@ if __name__ == "__main__":
 
             print 'style loss', results['style_loss']
             print 'content loss', results['content_loss']
+            print "smooth loss", results['smoothness_penalty']
+            print "l2 penalty", results['l2_loss']
 
             #il = get_losses(x)
             #for key in sorted(il.keys()):
@@ -239,7 +267,7 @@ if __name__ == "__main__":
 
             print "dy/dx", results['g']
 
-            im.convert('RGB').save(experimentDir + "/iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
+            im.convert('RGB').save(experimentDir + "/iteration_" + str(iteration / config["report_epoch_ratio"]) + "_label" + str(labels[0]) + ".png", "PNG")
             im2.convert('RGB').save(experimentDir + "/reconstruction_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
             im3.convert('RGB').save(experimentDir + "/observed_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
 

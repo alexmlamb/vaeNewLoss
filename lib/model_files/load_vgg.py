@@ -65,7 +65,7 @@ With raw RGB (no normalization).
 def vgg_network_pair(x1, x2, params, config):    
 
     def normalize(x):
-        return (x.transpose(0,3,1,2)[:,::-1,:,:] - np.array([104, 117, 123]).reshape((1,3,1,1)).astype('float32'))
+        return x.transpose(0,3,1,2)[:,::-1,:,:] - np.array([104, 117, 123]).reshape((1,3,1,1)).astype('float32')
 
     x1n = normalize(x1)
     x2n = normalize(x2)
@@ -135,7 +135,7 @@ def multiplier(key, image_width, t):
     M = k2s[key][1]
 
     if t == "style":
-        mult = 100000.0 / (4.0 * M**5)
+        mult = 100.0 / (4.0 * M**4 * N**2)
     elif t == "content":
         mult = 10000.0 / (M)
 
@@ -145,13 +145,72 @@ def multiplier(key, image_width, t):
 
 
 def gram_matrix(x, mb_size):
-    #x = x.flatten(3)
-    #prodLst = []
-    #for i in range(0, mb_size):
-    #    prodLst.append(T.tensordot(x[i:i+1], x[i:i+1], axes = ([2], [2])))
-    #return T.concatenate(prodLst, axis = 0)
 
-    return (x.dimshuffle(0, 'x', 1, 2, 3) * x.dimshuffle(0, 1, 'x', 2, 3)).sum(axis=[3, 4]).flatten(ndim=2)
+    #gram = (x.dimshuffle(0, 'x', 1, 2, 3) * x.dimshuffle(0, 1, 'x', 2, 3)).sum(axis=[3, 4])
+    #return gram.flatten(ndim=2)
+
+
+    def one_step(x_example):
+        x_example = x_example.reshape((1, x.shape[1], x.shape[2] * x.shape[3]))
+        return T.tensordot(x_example, x_example, axes = ([2], [2]))
+
+    results, _ = theano.scan(fn=one_step, outputs_info=None,non_sequences=[],sequences=[x], n_steps = mb_size)
+
+    #x is (128, 3, 32, 32).  
+
+    #x = x.flatten(3)
+    #g = T.tensordot(x, x, axes=([2], [2]))
+
+    return results
+
+
+def compute_style_penalty(o1, o2, keys, mb_size, image_width):
+    ls = 0.0
+
+
+    sequences = []
+    keyMap = {}
+    index = 0
+
+    shapeMap = {}
+
+    for key in keys:
+        sequences += [o1[key]]
+        sequences += [o2[key]]
+
+        keyMap[(1, key)] = index
+        keyMap[(2, key)] = index + 1
+
+        shapeMap[key] = o1[key].shape
+
+        index += 2
+
+    print 'key map', keyMap
+
+    def one_step(*args):
+
+        style_loss = 0.0
+
+        for key in keys:
+
+            x1 = args[keyMap[(1, key)]]
+            x2 = args[keyMap[(2, key)]]
+
+            shape = shapeMap[key]
+
+            x1 = x1.reshape((1, shape[1], shape[2] * shape[3]))
+            gram1 = T.tensordot(x1, x1, axes = ([2], [2]))
+
+            x2 = x2.reshape((1, shape[1], shape[2] * shape[3]))
+            gram2 = T.tensordot(x2, x2, axes = ([2], [2]))
+
+            style_loss += T.sum(T.sqr(gram1 - gram2)) * multiplier(key, image_width, "style")
+
+        return style_loss
+
+    results, _ = theano.scan(fn=one_step, outputs_info=None,non_sequences=[],sequences=sequences, n_steps = mb_size)
+
+    return results.sum()
 
 def get_dist(x1, x2, config):
     obj = pickle.load(open(config['vgg19_file']))
@@ -160,51 +219,58 @@ def get_dist(x1, x2, config):
 
     o1,o2 = vgg_network_pair(x1, x2, params, config)
 
-    dist_style = {}
     dist_content = {}
 
-    
+    style_keys = ["conv1_1", 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv4_1', 'conv5_1', 'conv5_4']
+
+    dist_style = compute_style_penalty(o1, o2, style_keys, config['mb_size'], config['image_width'])
 
     for key in o1:
 
-        if key in ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", "conv3_2", "conv3_3", "conv3_4"]:
-            gram1 = gram_matrix(o1[key], config['mb_size'])
-            gram2 = gram_matrix(o2[key], config['mb_size'])
 
-            dist_style["style_" + key] = multiplier(key, config['image_width'], "style") * T.mean(T.sqr(gram1 - gram2))
+        #if key in ["conv1_1"]:
+        #    gram1 = gram_matrix(o1[key], config['mb_size'])
+        #    gram2 = gram_matrix(o2[key], config['mb_size'])
+
+        #    gramMap[key] = gram1
+        #    dist_style["style_" + key] = multiplier(key, config['image_width'], "style") * T.sum(T.sqr(gram1 - gram2))
+        #    print "adding style loss based on", key
+
+        if key in ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", 'conv3_2', 'conv4_1', 'conv4_2']:
             dist_content["content_" + key] = multiplier(key, config['image_width'], "content") * T.mean(T.sqr(o1[key] - o2[key]))
-            print "adding loss based on", key
+            print "adding content loss based on"
 
     return dist_style, dist_content
 
 if __name__ == "__main__":
 
 
-    obj = pickle.load(open('model_files/vgg19_normalized.pkl'))
+    obj = pickle.load(open('/u/lambalex/trained_models/vgg-19/vgg19_normalized.pkl'))
 
     p = obj['param values']
 
     for e in p:
         print e.shape
 
-    x = T.tensor4()
+    import numpy.random as rng
+    srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
+    x = srng.normal(size=(1, 32, 32, 3))
 
     import time
 
     config = {}
 
-    config['mb_size'] = 2
+    config['mb_size'] = 1
     config['image_width'] = 32
+    config['vgg19_file'] = '/u/lambalex/trained_models/vgg-19/vgg19_normalized.pkl'
 
     t0 = time.time()
-    f = theano.function(inputs = [x], outputs = get_dist(x, x, config))
+    f = theano.function(inputs = [], outputs = get_dist(x, x, config)[0])
     print time.time() - t0, "time to compile"
 
-    x = np.random.uniform(size = (config['mb_size'], 32, 32, 3)).astype('float32')
+    #x = np.random.uniform(size = (config['mb_size'], 32, 32, 3)).astype('float32')
 
     t0 = time.time()
-    print "gram matrix shape", f(x).shape
-    print "time to run", time.time() - t0
-
-
+    res = f()
+    print res
 
