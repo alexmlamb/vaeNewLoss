@@ -56,7 +56,7 @@ net = build_model()
 
 print "built model"
 
-values = pickle.load(open('deepstyle_reproduction/vgg19_normalized.pkl'))['param values']
+values = pickle.load(open('/u/lambalex/trained_models/vgg-19/vgg19_normalized.pkl'))['param values']
 lasagne.layers.set_all_param_values(net['pool5'], values)
 
 print "loaded params"
@@ -64,6 +64,7 @@ print "loaded params"
 MEAN_VALUES = np.array([104, 117, 123]).reshape((3,1,1))
 
 def prep_image(im):
+    print "im shape", im.shape
     if len(im.shape) == 2:
         im = im[:, :, np.newaxis]
         im = np.repeat(im, 3, axis=2)
@@ -88,12 +89,13 @@ def prep_image(im):
     im = im - MEAN_VALUES
     return rawim, floatX(im[np.newaxis])
 
-photo = plt.imread('deepstyle_reproduction/Tuebingen_Neckarfront.jpg')
+photo = plt.imread('/u/lambalex/DeepLearning/vaeNewLoss/lib/texture_synthesis/grass_picture.jpg')
 rawim, photo = prep_image(photo)
 
-
-art = plt.imread('deepstyle_reproduction/1920px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg')
+art = plt.imread('/u/lambalex/DeepLearning/vaeNewLoss/lib/texture_synthesis/grass_picture.jpg')
 rawim, art = prep_image(art)
+
+
 
 print "prepped art photo range", art.shape, art.min(), art.max()
 
@@ -155,7 +157,7 @@ gen_features = {k: v for k, v in zip(layers.keys(), gen_features)}
 losses = []
 
 # content loss
-losses.append(1.0 * 0.001 * content_loss(photo_features, gen_features, 'conv4_2'))
+losses.append(0.0 * 0.001 * content_loss(photo_features, gen_features, 'conv4_2'))
 
 # style loss
 losses.append(0.2e6 * style_loss(art_features, gen_features, 'conv1_1'))
@@ -165,7 +167,7 @@ losses.append(0.2e6 * style_loss(art_features, gen_features, 'conv4_1'))
 losses.append(0.2e6 * style_loss(art_features, gen_features, 'conv5_1'))
 
 # total variation penalty
-losses.append(1.0 * 0.1e-7 * total_variation_loss(generated_image))
+#losses.append(1.0 * 0.1e-7 * total_variation_loss(generated_image))
 
 total_loss = sum(losses)
 
@@ -204,7 +206,7 @@ xs = []
 xs.append(x0)
 
 # Optimize, saving the result periodically
-for i in range(500):
+for i in range(20000):
     print "scipy optimize", i
     print "loss", eval_grad(x0)
     #scipy.optimize.fmin_l_bfgs_b(eval_loss, x0.flatten(), fprime=eval_grad, maxfun=40)
@@ -227,6 +229,9 @@ def deprocess(x):
 
 print "x shape", xs[-1].shape
 
-Image.fromarray(deprocess(xs[-1]).astype('uint8'), "RGB").save("derp.png", "PNG")
+Image.fromarray(deprocess(xs[-1]).astype('uint8'), "RGB").save("texture_synthesis/plots/generated.png", "PNG")
+Image.fromarray(photo.astype('uint8'), "RGB").save("texture_synthesis/plots/original.png", "PNG")
+
+
 
 
