@@ -44,7 +44,7 @@ theano.config.floatX = 'float32'
 
 if __name__ == "__main__":
 
-    worker = Worker(control_port=43437)
+    worker = Worker(control_port=4222)
     device = theano.config.device
 
     config = get_config()
@@ -61,10 +61,13 @@ if __name__ == "__main__":
 
     print "compiled hidden grabber"
 
+    platoon_sync_rule = EASGD(0.1)
+    nb_minibatches_before_sync = 10  # 10 from EASGD paper
+
     # TODO : This should all be in the config file or get rid of it.
     config["learning_rate"] = 0.0001  # 0.001 works
     config["number_epochs"] = 20000000
-    config["report_epoch_ratio"] = 5
+    # config["report_epoch_ratio"] = 5
     config["popups"] = True
     config["experiment_type"] = "original_layer"
 
@@ -132,7 +135,7 @@ if __name__ == "__main__":
 
     params += encoder_extra_params + decoder_extra_params
 
-    worker.init_shared_params(params, param_sync_rule=EASGD(1.0))
+    worker.init_shared_params(params, param_sync_rule=platoon_sync_rule)
 
     for param in params:
         print param.get_value().shape
@@ -183,8 +186,6 @@ if __name__ == "__main__":
     # compute_hidden_diff = theano.function(inputs = [xA, xB], outputs = {'hd' : get_hidden_diff(xA, xB, config['layer_weighting'])})
 
     print "running on data"
-
-    nb_minibatches_before_sync = 1  # 10 from EASGD paper
 
     iteration = 0
     t1 = time.time()
