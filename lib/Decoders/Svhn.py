@@ -16,13 +16,13 @@ def svhn_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
 
     layers += [HiddenLayer(num_in = numHidden, num_out = c[0] * 4 * 4, activation = 'relu', batch_norm = True)]
 
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = True, unflatten_input = (mb_size, c[0], 4, 4))]
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = True)]
+    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = False, unflatten_input = (mb_size, c[0], 4, 4))]
+    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = False)]
 
     layers += [Upsample(output_shape = (mb_size, c[0], 8, 8))]
 
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 3, activation = 'relu', batch_norm = True)]
+    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 3, activation = 'relu', batch_norm = False)]
+    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 3, activation = 'relu', batch_norm = False)]
     layers += [Upsample(output_shape = (mb_size, c[1], 16, 16))]
     layers += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 5, activation = 'relu', batch_norm = False)]
     layers += [ConvPoolLayer(in_channels = c[1], out_channels = c[2], kernel_len = 5, activation = 'relu', batch_norm = False)]

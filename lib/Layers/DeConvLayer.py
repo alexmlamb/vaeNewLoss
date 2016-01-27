@@ -37,11 +37,9 @@ class DeConvLayer(object):
 
         self.batch_norm = batch_norm
 
-        std = np.sqrt(2.0 / ((in_channels + out_channels) * kernel_len * kernel_len))
+        std = 0.02
 
-        print "deconv using std", std
-
-        self.W = Weight(self.filter_shape, mean = 1.0, std = 0.0 * std).val
+        self.W = Weight(self.filter_shape, mean = 0.0, std = std).val
         self.b = Weight(self.filter_shape[1], mean = 0.0, std=0).val
         if batch_norm:
             self.bn_mean = theano.shared(np.zeros(shape = (1,out_channels,1,1)).astype('float32'))

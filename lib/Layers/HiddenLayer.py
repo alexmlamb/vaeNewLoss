@@ -58,6 +58,8 @@ class HiddenLayer:
             activation = lambda x: T.exp(x)
         elif self.activation == "tanh":
             activation = lambda x: T.tanh(x)
+        elif self.activation == 'softplus':
+            activation = lambda x: T.log(1.0 + T.exp(x))
         else: 
             raise Exception("Activation not found")
 

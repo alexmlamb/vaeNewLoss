@@ -8,7 +8,7 @@ import numpy as np
 
 def decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
 
-    c = [1024, 512, 256, 128, 64]
+    c = [512, 256, 128, 128, 128, 128]
 
     layers = []
 
@@ -17,27 +17,14 @@ def decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
     layers += [HiddenLayer(num_in = numHidden, num_out = c[0] * 4 * 4, activation = 'relu', batch_norm = True)]
 
     layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = True, unflatten_input = (mb_size, c[0], 4, 4))]
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 1, activation = 'relu', batch_norm = True)]
 
-    layers += [Upsample(output_shape = (mb_size, c[0], 8, 8))]
+    layers += [DeConvLayer(in_channels = c[0], out_channels = c[1], kernel_len = 5, activation = 'relu', batch_norm = True)]
+    layers += [DeConvLayer(in_channels = c[1], out_channels = c[2], kernel_len = 5, activation = 'relu', batch_norm = True)]
+    layers += [DeConvLayer(in_channels = c[2], out_channels = c[3], kernel_len = 5, activation = 'relu', batch_norm = True)]
+    layers += [DeConvLayer(in_channels = c[3], out_channels = c[4], kernel_len = 5, activation = 'relu', batch_norm = True)]
+    layers += [DeConvLayer(in_channels = c[4], out_channels = c[5], kernel_len = 5, activation = 'relu', batch_norm = True)]
 
-    #layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[0], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[0], out_channels = c[1], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [Upsample(output_shape = (mb_size, c[1], 16, 16))]
-    layers += [ConvPoolLayer(in_channels = c[1], out_channels = c[1], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[1], out_channels = c[2], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [Upsample(output_shape = (mb_size, c[2], 32, 32))]
-    layers += [ConvPoolLayer(in_channels = c[2], out_channels = c[2], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[2], out_channels = c[2], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[2], out_channels = c[3], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [Upsample(output_shape = (mb_size, c[3], 64, 64))]
-    layers += [ConvPoolLayer(in_channels = c[3], out_channels = c[3], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[3], out_channels = c[3], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[3], out_channels = c[4], kernel_len = 3, activation = 'relu', batch_norm = False)]
-    layers += [Upsample(output_shape = (mb_size, c[4], 128, 128))]
-    layers += [ConvPoolLayer(in_channels = c[4], out_channels = c[4], kernel_len = 3, activation = 'relu', batch_norm = True)]
-    layers += [ConvPoolLayer(in_channels = c[4], out_channels = c[4], kernel_len = 3, activation = 'relu', batch_norm = False)]
-    layers += [ConvPoolLayer(in_channels = c[4], out_channels = 3, kernel_len = 3, activation = None, batch_norm = False)]
+    layers += [ConvPoolLayer(in_channels = c[5], out_channels = 3, kernel_len = 3, activation = None, batch_norm = False)]
 
     generated_outputs = [z_sampled]
     reconstruction_outputs = [z]

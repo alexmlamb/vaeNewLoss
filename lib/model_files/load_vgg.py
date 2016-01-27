@@ -137,7 +137,7 @@ def multiplier(key, image_width, t):
     if t == "style":
         mult = 100.0 / (4.0 * M**4 * N**2)
     elif t == "content":
-        mult = 10000.0 / (M)
+        mult = 10000.0
 
     print "Key multiplier", key, t, mult
 
@@ -212,35 +212,41 @@ def compute_style_penalty(o1, o2, keys, mb_size, image_width):
 
     return results.sum()
 
-def get_dist(x1, x2, config):
-    obj = pickle.load(open(config['vgg19_file']))
+class NetDist:
 
-    params = obj['param values']
+    def __init__(self, x1, x2, config):
+        self.config = config
 
-    o1,o2 = vgg_network_pair(x1, x2, params, config)
+        obj = pickle.load(open(config['vgg19_file']))
 
-    dist_content = {}
+        params = obj['param values']
 
-    style_keys = ["conv1_1", 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv4_1', 'conv5_1', 'conv5_4']
+        o1,o2 = vgg_network_pair(x1, x2, params, config)
 
-    dist_style = compute_style_penalty(o1, o2, style_keys, config['mb_size'], config['image_width'])
+        self.o1 = o1
+        self.o2 = o2
 
-    for key in o1:
+    def get_dist_style(self):
+
+        style_keys = self.config['style_keys']
+
+        dist_style = compute_style_penalty(self.o1, self.o2, style_keys, self.config['mb_size'], self.config['image_width'])
+
+        return dist_style
+
+    def get_dist_content(self):
+
+        dist_content = 0.0
+
+        content_keys = self.config['content_keys']
+
+        for key in content_keys:
+            dist_content += multiplier(key, self.config['image_width'], "content") * T.mean(T.sqr(self.o1[key] - self.o2[key]))
 
 
-        #if key in ["conv1_1"]:
-        #    gram1 = gram_matrix(o1[key], config['mb_size'])
-        #    gram2 = gram_matrix(o2[key], config['mb_size'])
+        return dist_content
 
-        #    gramMap[key] = gram1
-        #    dist_style["style_" + key] = multiplier(key, config['image_width'], "style") * T.sum(T.sqr(gram1 - gram2))
-        #    print "adding style loss based on", key
 
-        if key in ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", 'conv3_2', 'conv4_1', 'conv4_2']:
-            dist_content["content_" + key] = multiplier(key, config['image_width'], "content") * T.mean(T.sqr(o1[key] - o2[key]))
-            print "adding content loss based on"
-
-    return dist_style, dist_content
 
 if __name__ == "__main__":
 

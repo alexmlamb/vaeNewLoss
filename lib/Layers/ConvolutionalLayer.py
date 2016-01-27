@@ -42,6 +42,8 @@ class ConvPoolLayer(object):
             self.padsize = 1
         elif kernel_len == 5:
             self.padsize = 2
+        elif kernel_len == 11:
+            self.padsize = 5
         else:
             raise Exception()
         self.batch_norm = batch_norm
@@ -49,8 +51,7 @@ class ConvPoolLayer(object):
         self.activation = activation
         self.unflatten_input = unflatten_input
 
-
-        std = np.sqrt(2.0 / ((in_channels + out_channels) * kernel_len * kernel_len))
+        std = 0.02
 
         print "using std", std
 

@@ -5,6 +5,9 @@ import numpy as np
 def normalize(x):
     return (x / 127.5) - 1.0
 
+def denormalize(x):
+    return (x + 1.0) * 127.5
+
 class ImageNetData:
 
 
@@ -42,6 +45,8 @@ class ImageNetData:
 
         while len(imageLst) < self.mb_size:
             image = self.images[index]
+
+
             imgObj = Image.open(image).convert('RGB')
 
             imgObj = imgObj.resize((self.image_width,self.image_width))
