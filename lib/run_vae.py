@@ -3,24 +3,25 @@ import theano.tensor as T
 import numpy as np
 import numpy.random as rng
 from Layers.HiddenLayer import HiddenLayer
+# from Updates import Updates
 
 import lasagne
 
+# import math
 import time
 
-from Data.load_imagenet import normalize
+# from Classifiers.imagenet_classifier import get_overfeat_diff
+# import cPickle
 
 from config import get_config
 
+# from load_data import load_data_mnist, load_data_svhn
 
-from model_files.load_vgg import NetDist
+from model_files.load_vgg import get_dist
 
 from Data.load_imagenet import ImageNetData
 from Data.load_svhn import SvhnData
 from Data.load_cifar import CifarData
-from Data.load_stl import StlData
-
-from Layers.total_variation_denoising import total_denoising_variation_penalty
 
 from PIL import Image
 
@@ -31,6 +32,11 @@ import pprint
 import sys
 sys.setrecursionlimit(990000)
 
+from platoon.channel import Worker
+from platoon.param_sync import EASGD
+
+# from Classifiers.SvhnPredictor import c1_diff
+# from Predictor import c1_diff
 
 
 theano.config.floatX = 'float32'
@@ -38,8 +44,10 @@ theano.config.floatX = 'float32'
 
 if __name__ == "__main__":
 
-    config = get_config()
+    worker = Worker(control_port=4222)
+    device = theano.config.device
 
+    config = get_config()
     config["layer_weighting"] = {'y': 1.0}
 
     if config['dataset'] == "imagenet":
@@ -48,51 +56,42 @@ if __name__ == "__main__":
         data = SvhnData(config)
     elif config['dataset'] == 'cifar':
         data = CifarData(config, "train")
-    elif config['dataset'] == 'stl':
-        data = StlData(config)
     else:
         raise Exception()
 
     print "compiled hidden grabber"
 
+    platoon_sync_rule = EASGD(0.1)
+    nb_minibatches_before_sync = 10  # 10 from EASGD paper
+
+    # TODO : This should all be in the config file or get rid of it.
+    config["learning_rate"] = 0.0001  # 0.001 works
     config["number_epochs"] = 20000000
-    config["report_epoch_ratio"] = 5
+    # config["report_epoch_ratio"] = 5
     config["popups"] = True
-
-    experimentDir = config['plot_output_directory'] + "exp_" + str(int(time.time()))
-    os.mkdir(experimentDir)
-
     config["experiment_type"] = "original_layer"
 
     numHidden = 2048
-    numLatent = 128
-
-    print "NUMBER OF LATENT DIMENSIONS", numLatent
+    numLatent = 50
 
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
 
     s = pprint.pformat(config)
-    configLogFile = open(experimentDir + "/0_log.txt", "w")
-    configLogFile.write(s)
-    configLogFile.close()
+    experimentDir = worker.send_req("get_exp_dir")
+    with open(os.path.join(experimentDir, "{}_log.txt".format(device)), "w") as configLogFile:
+        configLogFile.write(s)
 
     # N x 1
     x = T.tensor4()
-    labels = T.ivector()
 
     if config['dataset'] == 'imagenet':
-        from Encoders.Imagenet import encoder as encoder_class
+        from Encoders.Imagenet import imagenet_encoder as encoder_class
     elif config['dataset'] == 'svhn' or config['dataset'] == 'cifar':
         from Encoders.Svhn import svhn_encoder as encoder_class
-    elif config['dataset'] == 'stl':
-        from Encoders.Stl import encoder as encoder_class
     else:
         raise Exception()
 
-    labels_reshaped = T.zeros(shape = (config['mb_size'], config['num_labels']))
-    labels_reshaped = T.set_subtensor(labels_reshaped[T.arange(config['mb_size']), labels], 1.0)
-
-    encoder = encoder_class(x, numHidden, labels_reshaped, config['num_labels'], mb_size=config['mb_size'], image_width=config['image_width'])
+    encoder = encoder_class(x, numHidden, mb_size=config['mb_size'], image_width=config['image_width'])
 
     encoder_layers = encoder['layers']
     encoder_output = encoder['output']
@@ -100,30 +99,23 @@ if __name__ == "__main__":
 
     z_mean_layer = HiddenLayer(num_in=numHidden, num_out=numLatent, activation=None)
 
-    z_var_layer = HiddenLayer(num_in=numHidden, num_out=numLatent, activation='softplus')
+    z_var_layer = HiddenLayer(num_in=numHidden, num_out=numLatent, activation='exp')
 
     z_mean = z_mean_layer.output(encoder_output)
-    z_var = T.maximum(z_var_layer.output(encoder_output), 1e-12)
+    z_var = z_var_layer.output(encoder_output)
 
-    z_sampled = T.matrix()
+    z_sampled = srng.normal(size=(config['mb_size'], numLatent))
 
     z = z_sampled * z_var + z_mean
 
-    def join(a,b):
-        return T.concatenate([a,b], axis = 1)
-
     if config["dataset"] == "imagenet":
-        from Decoders.Imagenet import decoder
-        decoder = decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
+        from Decoders.Imagenet import imagenet_decoder
+        decoder = imagenet_decoder(z=z, z_sampled=z_sampled, numHidden=numHidden, numLatent=numLatent, mb_size=config['mb_size'], image_width=config['image_width'])
     elif config["dataset"] == "svhn" or config['dataset'] == 'cifar':
         from Decoders.Svhn import svhn_decoder
-        decoder = svhn_decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
-    elif config['dataset'] == 'stl':
-        from Decoders.Stl import decoder
-        decoder = decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
+        decoder = svhn_decoder(z=z, z_sampled=z_sampled, numHidden=numHidden, numLatent=numLatent, mb_size=config['mb_size'], image_width=config['image_width'])
     else:
         raise Exception()
-
 
     decoder_layers = decoder['layers']
     x_reconstructed = decoder['output']
@@ -131,8 +123,6 @@ if __name__ == "__main__":
     decoder_extra_params = decoder['extra_params']
 
     layers = [z_mean_layer, z_var_layer] + encoder_layers + decoder_layers
-
-    l2_loss = 0.0
 
     params = []
 
@@ -142,49 +132,45 @@ if __name__ == "__main__":
         layerParams = layer.getParams()
         for paramKey in layerParams:
             params += [layerParams[paramKey]]
-            l2_loss += T.mean(T.sqr(params[-1]))
-
-    l2_loss = 0.0001 * T.sqrt(l2_loss)
 
     params += encoder_extra_params + decoder_extra_params
+
+    worker.init_shared_params(params, param_sync_rule=platoon_sync_rule)
 
     for param in params:
         print param.get_value().shape
 
     variational_loss = 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
 
-    smoothness_penalty = 0.001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
+    # y_out_sig = T.nnet.sigmoid(x_reconstructed)
+    # y_obs_sig = (observed_y + 1.0) / 2
 
-    square_loss = config['square_loss_weight'] * 1.0 * T.mean(T.sqr(normalize(x) - normalize(x_reconstructed)))
+    # square_loss = T.sum(-1.0 * (y_obs_sig) * T.log(y_out_sig) - 1.0 * (1.0 - y_obs_sig) * T.log(1.0 - y_out_sig))
+
+    square_loss = 100.0 * T.mean(T.sqr(x - x_reconstructed))
 
     loss = 0.0
 
-    loss += l2_loss
-
     loss += square_loss
 
-    netDist = NetDist(x, x_reconstructed, config)
+    dist_style, dist_content = get_dist(x_reconstructed, x, config)
 
-    if config['style_weight'] > 0.0:
-        style_loss = config['style_weight'] * netDist.get_dist_style()
-    else:
-        style_loss = theano.shared(np.asarray(0.0).astype('float32'))
-
-    if config['content_weight'] > 0.0:
-        content_loss = config['content_weight'] * netDist.get_dist_content()
-    else:
-        content_loss = theano.shared(np.asarray(0.0).astype('float32'))
+    style_loss = 10.0 * sum(dist_style.values())
+    content_loss = 100.0 * sum(dist_content.values())
 
     loss += style_loss + content_loss
 
     loss += 1.0 * variational_loss
 
-    updates = lasagne.updates.adam(loss, params, learning_rate = 0.0001)
+    # updateObj = Updates(params, loss, config["learning_rate"])
+    # updates = updateObj.getUpdates()
+
+    updates = lasagne.updates.adam(loss, params)
 
     print "Compiling ...",
     t0 = time.time()
 
-    train = theano.function(inputs = [x, labels, z_sampled], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss}, updates = updates)
+    train = theano.function(inputs=[x], outputs={'total_loss': loss, 'square_loss': square_loss, 'overfeat_loss': sum(dist_content.values()), 'variational_loss': variational_loss, 'samples': x_sampled, 'reconstruction': x_reconstructed, 'g': T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean': z_mean, 'z_var': z_var, 'style_loss': style_loss, 'content_loss': content_loss}, updates=updates)
 
     # dist_content.update(dist_style)
     # get_losses = theano.function(inputs = [x], outputs = dist_content)
@@ -193,48 +179,50 @@ if __name__ == "__main__":
 
     # sample = theano.function(inputs = [], outputs = [x_sampled])
 
+    total_loss_lst = []
     square_loss_lst = []
+    overfeat_loss_lst = []
 
     # compute_hidden_diff = theano.function(inputs = [xA, xB], outputs = {'hd' : get_hidden_diff(xA, xB, config['layer_weighting'])})
 
     print "running on data"
 
-    iteration = -1
-
+    iteration = 0
     t1 = time.time()
     while True:
+        step = worker.send_req('next')
+        print "# Received '{}' from Controller.".format(step)
 
-        iteration += 1
+        if step == 'train':
 
-        index = (iteration * config['mb_size']) % data.numExamples
+            for i in xrange(nb_minibatches_before_sync):
+                x_batch = data.getBatch()
+                x = x_batch['x']
+                # Skipping last mini-batch if not the right size
+                if x.shape[0] != config['mb_size']:
+                    x_batch = data.getBatch()
+                    x = x_batch['x']
 
-        x_batch = data.getBatch()
+                results = train(x)
 
-        x = x_batch['x']
-        labels = x_batch['labels']
+                total_loss_lst.append(results['total_loss'])
+                square_loss_lst.append(results['square_loss'])
+                overfeat_loss_lst.append(results['overfeat_loss'])
 
-        #print "LABELS", labels
+                variational_loss = results['variational_loss']
+                y = results['samples']
 
-        # print "X INPUT SHAPE", x.shape
+            iteration += nb_minibatches_before_sync
+            step = worker.send_req(dict(train_done=nb_minibatches_before_sync))
 
-        if x.shape[0] != config['mb_size']:
-            x_batch = data.getBatch()
-            x = x_batch['x']
-            labels = x_batch['labels']
+            print "Syncing with global params"
+            worker.sync_params(synchronous=True)
 
-        z_sampled = np.random.normal(size = (config['mb_size'], numLatent)).astype('float32')
-        results = train(x, labels, z_sampled)
-
-        square_loss_lst.append(results['square_loss'])
-
-        variational_loss = results['variational_loss']
-        y = results['samples']
-
-        if iteration % config["report_epoch_ratio"] == 0:
+        if step == 'valid':
+            worker.copy_to_local()
 
             print 'style loss', results['style_loss']
             print 'content loss', results['content_loss']
-            print "l2 penalty", results['l2_loss']
 
             #il = get_losses(x)
             # for key in sorted(il.keys()):
@@ -252,17 +240,32 @@ if __name__ == "__main__":
             im3 = Image.fromarray(x[0].astype('uint8'), "RGB")
 
             print "=============================================="
-
-            print "iteration", str(iteration / config["report_epoch_ratio"])
+            print "iteration", iteration
             print "Training time {:.2f}sec.".format(time.time()-t1)
-
             print "dy/dx", results['g']
 
-            im.convert('RGB').save(experimentDir + "/iteration_" + str(iteration / config["report_epoch_ratio"]) + "_label" + str(labels[0]) + ".png", "PNG")
-            im2.convert('RGB').save(experimentDir + "/reconstruction_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
-            im3.convert('RGB').save(experimentDir + "/observed_iteration_" + str(iteration / config["report_epoch_ratio"]) + ".png", "PNG")
+            image_type = "PNG"
+            im.convert('RGB').save(os.path.join(experimentDir, "{}_iteration_{}.{}".format(device, iteration, image_type)), image_type)
+            im2.convert('RGB').save(os.path.join(experimentDir, "{}_reconstruction_iteration_{}.{}".format(device, iteration, image_type)), image_type)
+            im3.convert('RGB').save(os.path.join(experimentDir, "{}_observed_iteration_{}.{}".format(device, iteration, image_type)), image_type)
 
+            print "Total Loss", sum(total_loss_lst) * 1.0 / len(total_loss_lst)
             print "Square Loss", sum(square_loss_lst) * 1.0 / len(square_loss_lst)
+            print "Overf Loss", sum(overfeat_loss_lst) * 1.0 / len(overfeat_loss_lst)
             print "Var Loss", variational_loss
 
+            step = worker.send_req(dict(valid_done=sum(total_loss_lst) * 1.0 / len(total_loss_lst)))
+
+            total_loss_lst = []
             square_loss_lst = []
+            overfeat_loss_lst = []
+
+            worker.copy_to_local()
+
+        if step == 'stop':
+            print "Stopping!"
+            break
+
+    # Release all shared ressources.
+    worker.close()
+    print "Worker terminated."
