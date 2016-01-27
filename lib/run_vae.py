@@ -254,7 +254,7 @@ if __name__ == "__main__":
             print "=============================================="
 
             print "iteration", str(iteration / config["report_epoch_ratio"])
-            print "Training time {:.4f}sec.".format(time.time()-t1)
+            print "Training time {:.2f}sec.".format(time.time()-t1)
 
             print "dy/dx", results['g']
 
