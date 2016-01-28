@@ -79,6 +79,6 @@ class LSTMController(Controller):
         return control_response
 
 if __name__ == '__main__':
-    l = LSTMController(control_port=4222, max_mb=5000, valid_freq=100)
+    l = LSTMController(control_port=4222, max_mb=5000, valid_freq=2)
     print "Controller is ready"
     l.serve()

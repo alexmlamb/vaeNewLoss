@@ -43,9 +43,9 @@ def get_config():
 
         config["image_width"] = 96
         config["num_labels"] = 1
-        config['square_loss_weight'] = 1000.0
+        config['square_loss_weight'] = 100.0
         config['style_weight'] = 1000.0
-        config['content_weight'] = 100000.0
+        config['content_weight'] = 100.0
 
         config['style_keys'] = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1']
         config['content_keys'] = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv3_4', 'conv4_1', 'conv4_2', 'conv5_1']
