@@ -50,9 +50,7 @@ class DeConvLayer(object):
         if self.unflatten_input != None:
             input = T.reshape(input, self.unflatten_input)
 
-        border_mode = (2,2)
-
-        conv_out = deconv(input, self.W, subsample=(2, 2), border_mode=border_mode)
+        conv_out = deconv(input, self.W, subsample=(2, 2), border_mode=(2,2))
 
         conv_out = conv_out + self.b.dimshuffle('x', 0, 'x', 'x')
 

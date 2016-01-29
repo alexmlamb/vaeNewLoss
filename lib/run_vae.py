@@ -8,7 +8,7 @@ import lasagne
 
 import time
 
-from Data.load_imagenet import normalize
+from Data.load_imagenet import normalize, denormalize
 
 from config import get_config
 
@@ -103,11 +103,11 @@ if __name__ == "__main__":
     z_var_layer = HiddenLayer(num_in=numHidden, num_out=numLatent, activation='softplus')
 
     z_mean = z_mean_layer.output(encoder_output)
-    z_var = T.maximum(z_var_layer.output(encoder_output), 1e-12)
+    z_var = T.maximum(1.0e-6, z_var_layer.output(encoder_output))
 
     z_sampled = T.matrix()
 
-    z = z_sampled * z_var + z_mean
+    z = z_sampled * T.sqrt(z_var) + z_mean
 
     def join(a,b):
         return T.concatenate([a,b], axis = 1)
@@ -153,9 +153,9 @@ if __name__ == "__main__":
 
     variational_loss = 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
 
-    smoothness_penalty = 0.001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
+    #smoothness_penalty = 0.001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
 
-    square_loss = config['square_loss_weight'] * 1.0 * T.mean(T.sqr(normalize(x) - normalize(x_reconstructed)))
+    square_loss = config['square_loss_weight'] * 1.0 * T.sum(T.sqr(normalize(x) - normalize(x_reconstructed)))
 
     loss = 0.0
 
@@ -183,7 +183,7 @@ if __name__ == "__main__":
 
     scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
 
-    updates = lasagne.updates.nesterov_momentum(scaled_grads, params, learning_rate = 0.0001)
+    updates = lasagne.updates.adam(scaled_grads, params, learning_rate = 0.001)
 
     print "Compiling ...",
     t0 = time.time()
@@ -249,8 +249,8 @@ if __name__ == "__main__":
 
             ys = np.clip(y[0], 0.0, 255.0)
             ys_rec = np.clip(results['reconstruction'][0], 0.0, 255.0)
-            print "ys rec max", results['reconstruction'].max()
-            print "ys rec min", results['reconstruction'].min()
+            print "ys rec max", results['reconstruction'][0].max()
+            print "ys rec min", results['reconstruction'][0].min()
             im = Image.fromarray(ys.astype('uint8'), "RGB")
             im2 = Image.fromarray(ys_rec.astype('uint8'), "RGB")
             im3 = Image.fromarray(x[0].astype('uint8'), "RGB")

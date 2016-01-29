@@ -46,6 +46,8 @@ theano.config.floatX = 'float32'
 
 if __name__ == "__main__":
 
+    print "running worker"
+
     worker = Worker(control_port=4222)
     device = theano.config.device
 
@@ -65,7 +67,7 @@ if __name__ == "__main__":
 
     print "compiled hidden grabber"
 
-    platoon_sync_rule = EASGD(0.1)
+    platoon_sync_rule = EASGD(0.3)
     nb_minibatches_before_sync = 10  # 10 from EASGD paper
 
     # TODO : This should all be in the config file or get rid of it.
@@ -75,7 +77,7 @@ if __name__ == "__main__":
     config["experiment_type"] = "original_layer"
 
     numHidden = 2048
-    numLatent = 50
+    numLatent = 256
 
     srng = theano.tensor.shared_randomstreams.RandomStreams(rng.randint(999999))
 
@@ -111,7 +113,7 @@ if __name__ == "__main__":
 
     z_sampled = srng.normal(size=(config['mb_size'], numLatent))
 
-    z = z_sampled * z_var + z_mean
+    z = z_sampled * T.sqrt(z_var) + z_mean
 
     if config["dataset"] == "imagenet":
         from Decoders.Imagenet import imagenet_decoder

@@ -17,10 +17,13 @@ rng = np.random.RandomState(23455)
 class Weight(object):
 
     def __init__(self, w_shape, mean=0, std=1.0):
+
         super(Weight, self).__init__()
+
+        print "conv layer using std of", std, "and mean of", mean, "with shape", w_shape
+
         if std != 0:
 
-            print "conv layer using std of", std
             self.np_values = np.asarray(
                1.0 * rng.normal(mean, std, w_shape), dtype=theano.config.floatX)
 
@@ -52,8 +55,6 @@ class ConvPoolLayer(object):
         self.unflatten_input = unflatten_input
 
         std = 0.02
-
-        print "using std", std
 
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
 
@@ -98,9 +99,9 @@ class ConvPoolLayer(object):
         elif self.activation == None:
             self.out = conv_out
 
-        if self.residual:
-            print "USING RESIDUAL"
-            self.out += input
+        #if self.residual:
+        #    print "USING RESIDUAL"
+        #    self.out += input
 
         self.params = {'W' : self.W.val, 'b' : self.b.val}
 

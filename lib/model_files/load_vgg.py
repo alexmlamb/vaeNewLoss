@@ -206,6 +206,11 @@ def compute_style_penalty(o1, o2, keys, mb_size, image_width):
 
             style_loss += T.sum(T.sqr(gram1 - gram2)) * multiplier(key, image_width, "style")
 
+            #x1 and x2 are (1, channels, positions)
+
+            style_loss += T.mean(T.abs_(x1.mean(axis = 2) - x2.mean(axis = 2)))
+
+
         return style_loss
 
     results, _ = theano.scan(fn=one_step, outputs_info=None,non_sequences=[],sequences=sequences, n_steps = mb_size)
@@ -230,7 +235,21 @@ class NetDist:
 
         style_keys = self.config['style_keys']
 
-        dist_style = compute_style_penalty(self.o1, self.o2, style_keys, self.config['mb_size'], self.config['image_width'])
+        #dist_style = compute_style_penalty(self.o1, self.o2, style_keys, self.config['mb_size'], self.config['image_width'])
+
+        dist_style = 0.0
+
+        for key in ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv3_4', 'conv4_1', 'conv4_2', 'conv5_1', 'conv5_4']:
+
+            x1 = self.o1[key].flatten(3)
+            x2 = self.o2[key].flatten(3)
+
+            #dist_style += T.mean(T.sqr(x1 - x2))
+            #dist_style += T.mean(T.sqr(T.mean(x1, axis = 2) - T.mean(x2, axis = 2)))
+            #dist_style += T.mean(T.sqr(T.max(x1, axis = 2) - T.max(x2, axis = 2)))
+            #dist_style += T.mean(T.sqr(T.min(x1, axis = 2) - T.min(x2, axis = 2)))
+
+            dist_style += T.mean(T.sqr(T.var(x1, axis = 2) - T.var(x2, axis = 2)))
 
         return dist_style
 

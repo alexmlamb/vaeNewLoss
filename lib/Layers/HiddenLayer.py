@@ -59,16 +59,17 @@ class HiddenLayer:
         elif self.activation == "tanh":
             activation = lambda x: T.tanh(x)
         elif self.activation == 'softplus':
-            activation = lambda x: T.log(1.0 + T.exp(x))
+            activation = lambda x: T.nnet.softplus(x)
         else: 
             raise Exception("Activation not found")
 
         out = activation(lin_output)
 
-        if self.residual:
-            return out + input_raw
-        else:
-            return out
+        #if self.residual:
+        #    return out + input_raw
+        #else:
+        #    return out
+        return out
 
     def getParams(self): 
         return self.params
