@@ -45,6 +45,8 @@ class ConvPoolLayer(object):
             self.padsize = 1
         elif kernel_len == 5:
             self.padsize = 2
+        elif kernel_len == 7:
+            self.padsize = 3
         elif kernel_len == 11:
             self.padsize = 5
         else:

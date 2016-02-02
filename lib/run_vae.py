@@ -40,6 +40,8 @@ if __name__ == "__main__":
 
     config = get_config()
 
+    print config
+
     config["layer_weighting"] = {'y': 1.0}
 
     if config['dataset'] == "imagenet":
@@ -64,8 +66,8 @@ if __name__ == "__main__":
 
     config["experiment_type"] = "original_layer"
 
-    numHidden = 2048
-    numLatent = 128
+    numHidden = 4096
+    numLatent = 2048
 
     print "NUMBER OF LATENT DIMENSIONS", numLatent
 
@@ -107,7 +109,7 @@ if __name__ == "__main__":
 
     z_sampled = T.matrix()
 
-    z = z_sampled * T.sqrt(z_var) + z_mean
+    z_reconstruction = z_mean + z_sampled * T.sqrt(z_var)
 
     def join(a,b):
         return T.concatenate([a,b], axis = 1)
@@ -120,7 +122,7 @@ if __name__ == "__main__":
         decoder = svhn_decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
     elif config['dataset'] == 'stl':
         from Decoders.Stl import decoder
-        decoder = decoder(z = z, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+        decoder = decoder(z_reconstruction = z_reconstruction, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
     else:
         raise Exception()
 
@@ -151,7 +153,8 @@ if __name__ == "__main__":
     for param in params:
         print param.get_value().shape
 
-    variational_loss = 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
+    variational_loss = config['vae_weight'] * 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
+
 
     #smoothness_penalty = 0.001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
 
@@ -166,14 +169,18 @@ if __name__ == "__main__":
     netDist = NetDist(x, x_reconstructed, config)
 
     if config['style_weight'] > 0.0:
-        style_loss = config['style_weight'] * netDist.get_dist_style()
+        style_loss, style_out_1, style_out_2 = netDist.get_dist_style()
+        style_loss *= config['style_weight']
     else:
-        style_loss = theano.shared(np.asarray(0.0).astype('float32'))
+        style_loss = style_out_1 = style_out_2 = theano.shared(np.asarray(0.0).astype('float32'))
 
     if config['content_weight'] > 0.0:
         content_loss = config['content_weight'] * netDist.get_dist_content()
     else:
         content_loss = theano.shared(np.asarray(0.0).astype('float32'))
+
+    #128 x 3 x 96 x 96
+    imgGrad = T.grad(style_loss + content_loss, x_reconstructed)[0,:,:,0]
 
     loss += style_loss + content_loss
 
@@ -188,7 +195,7 @@ if __name__ == "__main__":
     print "Compiling ...",
     t0 = time.time()
 
-    train = theano.function(inputs = [x, z_sampled], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss}, updates = updates)
+    train = theano.function(inputs = [x, z_sampled], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss, 'styleo1': style_out_1, 'styleo2' : style_out_2, 'imggrad' : imgGrad}, updates = updates)
 
     # dist_content.update(dist_style)
     # get_losses = theano.function(inputs = [x], outputs = dist_content)
@@ -234,11 +241,28 @@ if __name__ == "__main__":
         variational_loss = results['variational_loss']
         y = results['samples']
 
+        imggrad = results['imggrad']
+
+        #print "PRINTING IMG GRAD"
+        #print (imggrad * 100).astype('int16').tolist()
+
+
+        #for row in range(imggrad.shape[0]):
+        #    print row, imggrad[row].tolist()
+
         if iteration % config["report_epoch_ratio"] == 0:
+
+            #fig, ax = plt.subplots()
+            #heatmap = ax.pcolor(imggrad, cmap=plt.cm.Blues)
+            #plt.title(str(iteration))
+            #plt.show()
 
             print 'style loss', results['style_loss']
             print 'content loss', results['content_loss']
             print "l2 penalty", results['l2_loss']
+
+            print 'style out 1', results['styleo1']
+            print 'style out 2', results['styleo2']
 
             #il = get_losses(x)
             # for key in sorted(il.keys()):

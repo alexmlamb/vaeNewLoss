@@ -123,7 +123,7 @@ if __name__ == "__main__":
         decoder = svhn_decoder(z=z, z_sampled=z_sampled, numHidden=numHidden, numLatent=numLatent, mb_size=config['mb_size'], image_width=config['image_width'])
     elif config['dataset'] == 'stl':
         from Decoders.Stl import decoder
-        decoder = decoder(z=z, z_sampled=z_sampled, numHidden=numHidden, numLatent=numLatent, mb_size=config['mb_size'], image_width=config['image_width'])
+        decoder = decoder(z_reconstruction=z, z_sampled=z_sampled, numHidden=numHidden, numLatent=numLatent, mb_size=config['mb_size'], image_width=config['image_width'])
     else:
         raise Exception()
 
