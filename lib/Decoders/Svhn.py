@@ -8,7 +8,7 @@ import numpy as np
 
 def svhn_decoder(z, z_sampled, numLatent, numHidden, mb_size, image_width):
 
-    c = [256, 128, 64, 3]
+    c = [512, 256, 128, 3]
 
     layers = []
 

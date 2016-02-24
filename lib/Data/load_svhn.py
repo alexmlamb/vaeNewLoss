@@ -5,7 +5,7 @@ import cPickle
 
 class SvhnData:
 
-    def __init__(self, config):
+    def __init__(self, segment, config):
         np.random.seed(config["seed"])
 
         import scipy.io as sio
@@ -38,6 +38,8 @@ class SvhnData:
 
         test_X = np.swapaxes(np.swapaxes(np.swapaxes(test_X, 0,3), 2, 3), 1, 2)
 
+        self.test_X = test_X
+
         train_X = np.vstack((train_X, extra_X))
         train_Y = np.vstack((train_Y, extra_Y))
 
@@ -54,7 +56,12 @@ class SvhnData:
         self.train_X = train_X[train_indices]
         self.train_Y = train_Y[train_indices]
 
-        self.numExamples = train_X.shape[0]
+        if segment == "train":
+            self.dataobj = self.train_X
+        elif segment == "test":
+            self.dataobj = self.test_X
+
+        self.numExamples = self.dataobj.shape[0]
 
         self.index = 0
 
@@ -74,8 +81,10 @@ class SvhnData:
         if self.index + self.mb_size + 10 >= self.numExamples:
             self.index = 0
 
-        mb = self.train_X[self.index : self.index + self.mb_size]
+        mb = self.dataobj[self.index : self.index + self.mb_size]
 
         self.index += self.mb_size
 
-        return {'x' : mb}
+        return {'x' : mb, 'labels' : np.zeros(self.mb_size).astype('int32')}
+
+

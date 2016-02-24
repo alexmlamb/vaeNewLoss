@@ -47,7 +47,8 @@ if __name__ == "__main__":
     if config['dataset'] == "imagenet":
         data = ImageNetData(config)
     elif config['dataset'] == "svhn":
-        data = SvhnData(config)
+        data_train = SvhnData("train", config)
+        data_test = SvhnData('test', config)
     elif config['dataset'] == 'cifar':
         data = CifarData(config, "train")
     elif config['dataset'] == 'stl':
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     print "compiled hidden grabber"
 
     config["number_epochs"] = 20000000
-    config["report_epoch_ratio"] = 5
+    config["report_epoch_ratio"] = 20
     config["popups"] = True
 
     experimentDir = config['plot_output_directory'] + "exp_" + str(int(time.time()))
@@ -66,8 +67,8 @@ if __name__ == "__main__":
 
     config["experiment_type"] = "original_layer"
 
-    numHidden = 4096
-    numLatent = 2048
+    numHidden = 2048
+    numLatent = 256
 
     print "NUMBER OF LATENT DIMENSIONS", numLatent
 
@@ -84,8 +85,10 @@ if __name__ == "__main__":
 
     if config['dataset'] == 'imagenet':
         from Encoders.Imagenet import encoder as encoder_class
-    elif config['dataset'] == 'svhn' or config['dataset'] == 'cifar':
+    elif config['dataset'] == 'svhn':
         from Encoders.Svhn import svhn_encoder as encoder_class
+    elif config['dataset'] == 'cifar':
+        from Encoders.Cifar import encoder as encoder_class
     elif config['dataset'] == 'stl':
         from Encoders.Stl import encoder as encoder_class
     else:
@@ -105,7 +108,7 @@ if __name__ == "__main__":
     z_var_layer = HiddenLayer(num_in=numHidden, num_out=numLatent, activation='softplus')
 
     z_mean = z_mean_layer.output(encoder_output)
-    z_var = T.maximum(1.0e-6, z_var_layer.output(encoder_output))
+    z_var = T.maximum(1e-6, z_var_layer.output(encoder_output))
 
     z_sampled = T.matrix()
 
@@ -117,9 +120,12 @@ if __name__ == "__main__":
     if config["dataset"] == "imagenet":
         from Decoders.Imagenet import decoder
         decoder = decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
-    elif config["dataset"] == "svhn" or config['dataset'] == 'cifar':
+    elif config["dataset"] == "svhn":
         from Decoders.Svhn import svhn_decoder
-        decoder = svhn_decoder(z = join(z, labels_reshaped), z_sampled = join(z_sampled, labels_reshaped), numHidden = numHidden, numLatent = numLatent + config['num_labels'], mb_size = config['mb_size'], image_width = config['image_width'])
+        decoder = svhn_decoder(z = z_reconstruction, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
+    elif config['dataset'] == 'cifar':
+        from Decoders.Cifar import decoder
+        decoder = decoder(z_reconstruction = z_reconstruction, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
     elif config['dataset'] == 'stl':
         from Decoders.Stl import decoder
         decoder = decoder(z_reconstruction = z_reconstruction, z_sampled = z_sampled, numHidden = numHidden, numLatent = numLatent, mb_size = config['mb_size'], image_width = config['image_width'])
@@ -155,10 +161,12 @@ if __name__ == "__main__":
 
     variational_loss = config['vae_weight'] * 0.5 * T.sum(z_mean**2 + z_var - T.log(z_var) - 1.0)
 
+    smoothness_penalty = 0.0 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
 
-    #smoothness_penalty = 0.001 * (total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,0:1,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,1:2,:,:]) + total_denoising_variation_penalty(x_reconstructed.transpose(0,3,1,2)[:,2:3,:,:]))
 
-    square_loss = config['square_loss_weight'] * 1.0 * T.sum(T.sqr(normalize(x) - normalize(x_reconstructed)))
+    raw_square_loss = T.sum(T.sqr(normalize(x) - normalize(x_reconstructed)))
+
+    square_loss = raw_square_loss * config['square_loss_weight']
 
     loss = 0.0
 
@@ -175,27 +183,35 @@ if __name__ == "__main__":
         style_loss = style_out_1 = style_out_2 = theano.shared(np.asarray(0.0).astype('float32'))
 
     if config['content_weight'] > 0.0:
-        content_loss = config['content_weight'] * netDist.get_dist_content()
+        content_loss_values, varLst = netDist.get_dist_content()
+        content_loss = sum(content_loss_values.values()) * config['content_weight']
+        params += varLst
     else:
         content_loss = theano.shared(np.asarray(0.0).astype('float32'))
+        content_loss_values, varLst = netDist.get_dist_content() 
 
     #128 x 3 x 96 x 96
-    imgGrad = T.grad(style_loss + content_loss, x_reconstructed)[0,:,:,0]
 
     loss += style_loss + content_loss
 
     loss += 1.0 * variational_loss
 
+    loss += 1.0 * smoothness_penalty
+
     all_grads = T.grad(loss, params)
 
     scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
 
-    updates = lasagne.updates.adam(scaled_grads, params, learning_rate = 0.001)
+    updates = lasagne.updates.adam(scaled_grads, params, learning_rate = config['learning_rate'])
 
     print "Compiling ...",
     t0 = time.time()
 
-    train = theano.function(inputs = [x, z_sampled], outputs = {'total_loss' : loss, 'square_loss' : square_loss, 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss, 'styleo1': style_out_1, 'styleo2' : style_out_2, 'imggrad' : imgGrad}, updates = updates)
+    outputMap = {'total_loss' : loss, 'raw_square_loss' : raw_square_loss, 'square_loss' : square_loss, 'variational_loss' : variational_loss, 'samples' : x_sampled, 'reconstruction' : x_reconstructed, 'g' : T.sum(T.sqr(T.grad(T.sum(x_reconstructed), x))), 'z_mean' : z_mean, 'z_var' : z_var, 'style_loss' : style_loss, 'content_loss' : content_loss, 'l2_loss' : l2_loss, 'styleo1': style_out_1, 'styleo2' : style_out_2, 'conv1_1' : content_loss_values['conv1_1'], 'conv2_1' : content_loss_values['conv2_1'], 'conv3_1' : content_loss_values['conv3_1'], 'smoothness_loss' : smoothness_penalty}
+
+    train = theano.function(inputs = [x, z_sampled], outputs = outputMap, updates = updates)
+
+    test = theano.function(inputs = [x, z_sampled], outputs = outputMap)
 
     # dist_content.update(dist_style)
     # get_losses = theano.function(inputs = [x], outputs = dist_content)
@@ -217,9 +233,9 @@ if __name__ == "__main__":
 
         iteration += 1
 
-        index = (iteration * config['mb_size']) % data.numExamples
+        index = (iteration * config['mb_size']) % data_train.numExamples
 
-        x_batch = data.getBatch()
+        x_batch = data_train.getBatch()
 
         x = x_batch['x']
         labels = x_batch['labels']
@@ -241,8 +257,6 @@ if __name__ == "__main__":
         variational_loss = results['variational_loss']
         y = results['samples']
 
-        imggrad = results['imggrad']
-
         #print "PRINTING IMG GRAD"
         #print (imggrad * 100).astype('int16').tolist()
 
@@ -252,6 +266,9 @@ if __name__ == "__main__":
 
         if iteration % config["report_epoch_ratio"] == 0:
 
+            x = data_test.getBatch()['x']
+            results = test(x, z_sampled)
+
             #fig, ax = plt.subplots()
             #heatmap = ax.pcolor(imggrad, cmap=plt.cm.Blues)
             #plt.title(str(iteration))
@@ -259,10 +276,11 @@ if __name__ == "__main__":
 
             print 'style loss', results['style_loss']
             print 'content loss', results['content_loss']
-            print "l2 penalty", results['l2_loss']
+            print 'smooth loss', results['smoothness_loss']
 
-            print 'style out 1', results['styleo1']
-            print 'style out 2', results['styleo2']
+            print 'conv1_1', results['conv1_1']
+            print 'conv2_1', results['conv2_1']
+            print 'conv3_1', results['conv3_1']
 
             #il = get_losses(x)
             # for key in sorted(il.keys()):

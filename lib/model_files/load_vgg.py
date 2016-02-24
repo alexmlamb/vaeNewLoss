@@ -139,7 +139,7 @@ def multiplier(key, image_width, t):
     if t == "style":
         mult = 100.0 / (4.0 * M**4 * N**2)
     elif t == "content":
-        mult = 10000.0
+        mult = 10000.0 / (M)
 
     print "Key multiplier", key, t, mult
 
@@ -176,6 +176,11 @@ def compute_style_penalty(o1, o2, keys, mb_size, image_width):
 
     shapeMap = {}
 
+    shapeMap['conv1_1'] = (64, 96, 96)
+    shapeMap['conv2_1'] = (128, 48, 48)
+    shapeMap['conv3_1'] = (256, 24, 24)
+    shapeMap['conv4_1'] = (512, 12, 12)
+
     for key in keys:
         sequences += [o1[key]]
         sequences += [o2[key]]
@@ -183,11 +188,30 @@ def compute_style_penalty(o1, o2, keys, mb_size, image_width):
         keyMap[(1, key)] = index
         keyMap[(2, key)] = index + 1
 
-        shapeMap[key] = o1[key].shape
-
         index += 2
 
-    print 'key map', keyMap
+
+    def gram(args, keyUse, sx, ex, sy, ey):
+
+        x1 = args[keyMap[(1, keyUse)]]
+        x2 = args[keyMap[(2, keyUse)]]
+
+        shape_raw = shapeMap[keyUse]
+        print "keyUse", keyUse, shape_raw
+        shape = (1, shape_raw[0], ex - sx, ey - sy)
+
+        x1 = x1[:,sx:ex,sy:ey]
+        x2 = x2[:,sx:ex,sy:ey]
+
+        x1 = x1.reshape((1, shape[1], shape[2] * shape[3]))
+        gram1 = T.tensordot(x1, x1, axes = ([2], [2]))
+
+        x2 = x2.reshape((1, shape[1], shape[2] * shape[3]))
+        gram2 = T.tensordot(x2, x2, axes = ([2], [2]))
+
+        #100000
+        return T.sum(10.0 * T.sqr(gram1 - gram2)) * multiplier(key, image_width, "style")
+
 
     def one_step(*args):
 
@@ -195,19 +219,7 @@ def compute_style_penalty(o1, o2, keys, mb_size, image_width):
 
         for key in keys:
 
-            x1 = args[keyMap[(1, key)]]
-            x2 = args[keyMap[(2, key)]]
-
-            shape = shapeMap[key]
-
-            x1 = x1.reshape((1, shape[1], shape[2] * shape[3]))
-            gram1 = T.tensordot(x1, x1, axes = ([2], [2]))
-
-            x2 = x2.reshape((1, shape[1], shape[2] * shape[3]))
-            gram2 = T.tensordot(x2, x2, axes = ([2], [2]))
-
-            style_loss += T.sum(100.0 * T.abs_(gram1 - gram2)) * multiplier(key, image_width, "style")
-
+            style_loss += gram(args, key, 0, 120, 0, 120)
 
         return style_loss
 
@@ -237,39 +249,34 @@ class NetDist:
 
         dist_style += compute_style_penalty(self.o1, self.o2, style_keys, self.config['mb_size'], self.config['image_width'])
 
-        #for key in ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv4_1', 'conv5_1']:
-
-        #    x1 = self.o1[key].flatten(3)
-        #    x2 = self.o2[key].flatten(3)
-
-            #dist_style += T.mean(T.sqr(x1 - x2))
-            #dist_style += T.mean(T.sqr(T.mean(x1, axis = 2) - T.mean(x2, axis = 2)))
-            #dist_style += T.mean(T.sqr(T.max(x1, axis = 2) - T.max(x2, axis = 2)))
-            #dist_style += T.mean(T.sqr(T.min(x1, axis = 2) - T.min(x2, axis = 2)))
-            #dist_style += T.mean(T.sqr(T.var(x1, axis = 2) - T.var(x2, axis = 2)))
-            
-        #    dist_style += T.mean(T.sqr(T.mean(x1, axis = 1) - T.mean(x2, axis = 1)))
-        #    dist_style += T.mean(T.sqr(T.var(x1, axis = 1) - T.var(x2, axis = 1)))
-
         return dist_style, dist_style, dist_style
 
     def get_dist_content(self):
 
-        dist_content = 0.0
+        shapeMap = {}
+        shapeMap['conv1_1'] = (1, 64, 1, 1)
+        shapeMap['conv1_2'] = (1, 64, 1, 1)
+        shapeMap['conv2_1'] = (1, 128, 1, 1)
+        shapeMap['conv2_2'] = (1, 128, 1, 1)
+        shapeMap['conv3_1'] = (1, 256, 1, 1)
+        shapeMap['conv3_2'] = (1, 256, 1, 1)
+        shapeMap['conv3_3'] = (1, 256, 1, 1)
+        shapeMap['conv3_4'] = (1, 256, 1, 1)
+
+        dist_content = {}
 
         content_keys = self.config['content_keys']
+
 
         for key in content_keys:
 
             h1 = self.o1[key]
             h2 = self.o2[key]
 
-            dist_content += multiplier(key, self.config['image_width'], "content") * 100.0 * T.mean(T.abs_(h1 - h2))
 
-            dist_content += 0.01 * (T.mean(T.abs_(h1)) + T.mean(T.abs_(h2)))
+            dist_content[key] = T.sum(T.sqr(h1 - h2))
 
-        return dist_content
-
+        return dist_content, []
 
 
 if __name__ == "__main__":

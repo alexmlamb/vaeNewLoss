@@ -60,7 +60,7 @@ class CifarData:
         x = self.images[index : index + self.mb_size]
         labels = self.labels[index : index + self.mb_size]
 
-        return {'x' : x, 'labels' : labels.astype('int32')}
+        return {'x' : x, 'labels' : np.zeros(self.mb_size).astype('int32')}
 
 if __name__ == "__main__":
 
